@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Cloud Runner</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="game-wrapper">
+    <!-- Top HUD Bar -->
+    <header id="game-hud">
+      <div class="hud-group hud-lives-group">
+        <span class="hud-label">LIVES</span>
+        <div id="hud-lives" class="lives-container">
+          <!-- Populated dynamically via JS -->
+        </div>
+      </div>
+
+      <div class="hud-group hud-score-group">
+        <div class="score-box">
+          <span class="hud-label">SCORE</span>
+          <span id="hud-score" class="hud-value">0</span>
+        </div>
+        <div class="score-box">
+          <span class="hud-label">RECORD</span>
+          <span id="hud-highscore" class="hud-value neon-cyan">0</span>
+        </div>
+      </div>
+
+      <div class="hud-group hud-controls-group">
+        <button id="mute-btn" class="cyber-icon-btn" aria-label="Ton an/aus" title="Ton umschalten">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Canvas Container -->
+    <main id="canvas-container">
+      <canvas id="game-canvas"></canvas>
+
+      <!-- Start Screen Overlay -->
+      <div id="start-overlay" class="overlay-screen">
+        <div class="overlay-card">
+          <div class="cyber-badge">SYSTEM // READY</div>
+          <h1 class="game-title">CLOUD RUNNER</h1>
+          <p class="game-subtitle">CYBERPUNK HIGHWAY PURSUIT</p>
+
+          <div class="instructions-box">
+            <div class="instruction-row">
+              <span class="key-badge">LEERTASTE</span>
+              <span class="key-badge">▲</span>
+              <span class="instruction-text">oder <strong>TAP</strong> zum Springen</span>
+            </div>
+            <div class="instruction-row sub-instruction">
+              <span class="highlight-cyan">TIPP:</span> Drücke erneut in der Luft für einen <strong>Doppelsprung</strong>!
+            </div>
+          </div>
+
+          <button id="start-btn" class="cyber-btn cyber-btn-primary">
+            <span class="btn-glitch-text">SPIEL STARTEN</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Game Over Screen Overlay -->
+      <div id="gameover-overlay" class="overlay-screen hidden">
+        <div class="overlay-card">
+          <div class="cyber-badge badge-danger">SYSTEM // OVERLOAD</div>
+          <h2 class="gameover-title">GAME OVER</h2>
+
+          <div class="gameover-stats">
+            <div class="stat-box">
+              <span class="stat-label">ERZIEHLTE PUNKTE</span>
+              <span id="final-score" class="stat-value neon-yellow">0</span>
+            </div>
+          </div>
+
+          <!-- Name Entry Form -->
+          <div class="highscore-entry-form">
+            <label for="player-name-input" class="form-label">RUNNER-NAME:</label>
+            <div class="input-row">
+              <input type="text" id="player-name-input" maxlength="15" placeholder="DEIN NAME" autocomplete="off" spellcheck="false">
+              <button id="save-score-btn" class="cyber-btn cyber-btn-secondary">SPEICHERN</button>
+            </div>
+          </div>
+
+          <!-- Leaderboard List -->
+          <div class="leaderboard-section">
+            <h3 class="leaderboard-title">TOP RUNNER</h3>
+            <ul id="highscore-list" class="highscore-list">
+              <!-- Dynamically populated via JS -->
+            </ul>
+          </div>
+
+          <button id="restart-btn" class="cyber-btn cyber-btn-primary">
+            <span class="btn-glitch-text">NOCHMAL SPIELEN</span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Mobile Touch Jump Button -->
+    <div id="mobile-controls">
+      <button id="mobile-jump-btn" class="mobile-touch-btn" aria-label="Springen">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 4l-8 8h5v8h6v-8h5z"/>
+        </svg>
+        <span>JUMP</span>
+      </button>
+    </div>
+  </div>
+
+  <script type="module" src="js/game.js"></script>
+</body>
+</html>

@@ -1,0 +1,12 @@
+{
+  "name": "cloudrunner",
+  "version": "1.0.0",
+  "description": "Cyberpunk Jump-and-Run Browser Game",
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": ["game", "cyberpunk", "canvas", "html5"],
+  "author": "",
+  "license": "MIT"
+}
