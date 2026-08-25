@@ -105,6 +105,32 @@ html, body {
   transform: scale(0.85);
 }
 
+.hud-discs-group {
+  gap: 8px;
+  background: rgba(14, 12, 28, 0.6);
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 230, 0, 0.3);
+}
+
+.disc-hud-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 0 6px rgba(0, 240, 255, 0.6));
+  animation: disc-glow 2s infinite ease-in-out;
+}
+
+@keyframes disc-glow {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 4px rgba(0, 240, 255, 0.5)); }
+  50% { transform: scale(1.08); filter: drop-shadow(0 0 8px rgba(255, 0, 127, 0.8)); }
+}
+
+.highlight-yellow {
+  color: var(--neon-yellow);
+  font-weight: bold;
+}
+
 .hud-score-group {
   gap: 16px;
 }

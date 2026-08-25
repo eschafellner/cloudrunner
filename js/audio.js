@@ -245,6 +245,59 @@ class SoundEngine {
   }
 
   /**
+   * Plays disc collectible pickup sound (sparkling cyber chime)
+   */
+  playDiscPickup() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1046.50, now); // C6
+      osc.frequency.exponentialRampToValueAtTime(1567.98, now + 0.08); // G6
+
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+
+      osc.start(now);
+      osc.stop(now + 0.1);
+    } catch {}
+  }
+
+  /**
+   * Plays extra life reward sound (triumphant power-up fanfare)
+   */
+  playExtraLife() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      const notes = [523.25, 659.25, 783.99, 1046.50]; // C5, E5, G5, C6
+      notes.forEach((freq, index) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const startTime = now + index * 0.07;
+
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(freq, startTime);
+
+        gain.gain.setValueAtTime(0.25, startTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, startTime + 0.28);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        osc.start(startTime);
+        osc.stop(startTime + 0.28);
+      });
+    } catch {}
+  }
+
+  /**
    * Plays Game Over sound (dystopian descending drone)
    */
   playGameOver() {

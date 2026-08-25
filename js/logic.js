@@ -14,9 +14,12 @@ export const GAME_CONFIG = {
   BASE_SPAWN_INTERVAL: 2.2,   // Initial spawn delay in seconds
   MIN_SPAWN_INTERVAL: 0.95,   // Fastest spawn delay
   OBSTACLE_CLEAR_BONUS: 25,   // Bonus score per obstacle passed
+  DISC_SCORE_BONUS: 10,       // Bonus score per collected disc
   SCORE_PER_SECOND: 10,       // Passive score per second alive
 
   INITIAL_LIVES: 3,
+  MAX_LIVES: 5,               // Maximum life cap including extra lives
+  DISCS_PER_EXTRA_LIFE: 20,   // Discs needed to earn +1 extra life
   INVULNERABILITY_DURATION: 1.8, // Seconds of invulnerability after damage
   DAY_NIGHT_DURATION: 90,        // Seconds for complete Noon -> Night cycle
 
@@ -24,6 +27,9 @@ export const GAME_CONFIG = {
   JUMP_FORCE: -680,           // Initial jump velocity (px/s)
   DOUBLE_JUMP_FORCE: -580,    // Double jump velocity (px/s)
   MAX_FALL_SPEED: 1000,       // Terminal fall velocity
+
+  MAX_PLATFORM_HEIGHT: 95,    // Max platform elevation above ground (px)
+  MIN_PLATFORM_HEIGHT: 45,    // Min platform elevation above ground (px)
 };
 
 /**
@@ -42,13 +48,13 @@ export function checkCollision(a, b) {
 
   const ax = a.x + (padA.x || 0);
   const ay = a.y + (padA.y || 0);
-  const aw = Math.max(1, a.width - (padA.w || 0) - (padA.x || 0));
-  const ah = Math.max(1, a.height - (padA.h || 0) - (padA.y || 0));
+  const aw = Math.max(1, a.width - (padA.w || 0));
+  const ah = Math.max(1, a.height - (padA.h || 0));
 
   const bx = b.x + (padB.x || 0);
   const by = b.y + (padB.y || 0);
-  const bw = Math.max(1, b.width - (padB.w || 0) - (padB.x || 0));
-  const bh = Math.max(1, b.height - (padB.h || 0) - (padB.y || 0));
+  const bw = Math.max(1, b.width - (padB.w || 0));
+  const bh = Math.max(1, b.height - (padB.h || 0));
 
   return (
     ax < bx + bw &&
@@ -56,6 +62,136 @@ export function checkCollision(a, b) {
     ay < by + bh &&
     ay + ah > by
   );
+}
+
+/**
+ * Updates disc collection state and handles extra-life granting.
+ *
+ * @param {number} currentDiscs - Current disc counter (0 to 19)
+ * @param {number} currentLives - Current lives (1 to 5)
+ * @param {number} [maxLives=5] - Maximum allowed lives
+ * @param {number} [discsPerLife=20] - Number of discs required for +1 life
+ * @returns {Object} { discs: number, lives: number, earnedExtraLife: boolean }
+ */
+export function updateDiscCollection(
+  currentDiscs,
+  currentLives,
+  maxLives = GAME_CONFIG.MAX_LIVES,
+  discsPerLife = GAME_CONFIG.DISCS_PER_EXTRA_LIFE
+) {
+  const safeDiscs = Math.max(0, currentDiscs || 0) + 1;
+  const safeLives = Math.max(0, currentLives || 0);
+
+  if (safeDiscs >= discsPerLife) {
+    const newLives = Math.min(maxLives, safeLives + 1);
+    return {
+      discs: 0,
+      lives: newLives,
+      earnedExtraLife: true,
+    };
+  }
+
+  return {
+    discs: safeDiscs,
+    lives: safeLives,
+    earnedExtraLife: false,
+  };
+}
+
+/**
+ * Calculates theoretical maximum single-jump height from jump force and gravity.
+ * Formula: H = v_0^2 / (2 * g)
+ *
+ * @param {number} [jumpForce] - Initial jump velocity in px/s (negative)
+ * @param {number} [gravity] - Gravity in px/s^2
+ * @returns {number} Maximum height in pixels
+ */
+export function calculateMaxJumpHeight(
+  jumpForce = GAME_CONFIG.JUMP_FORCE,
+  gravity = GAME_CONFIG.GRAVITY
+) {
+  const v0 = Math.abs(jumpForce);
+  return (v0 * v0) / (2 * gravity);
+}
+
+/**
+ * Calculates theoretical maximum single-jump horizontal distance at a given speed.
+ * Formula: T_air = 2 * v_0 / g, D = speed * T_air
+ *
+ * @param {number} speed - Horizontal velocity in px/s
+ * @param {number} [jumpForce] - Jump velocity in px/s
+ * @param {number} [gravity] - Gravity in px/s^2
+ * @returns {number} Distance in pixels
+ */
+export function calculateMaxJumpDistance(
+  speed,
+  jumpForce = GAME_CONFIG.JUMP_FORCE,
+  gravity = GAME_CONFIG.GRAVITY
+) {
+  const v0 = Math.abs(jumpForce);
+  const airTime = (2 * v0) / gravity;
+  return Math.max(0, speed * airTime);
+}
+
+/**
+ * Derives a fair, jumpable chasm width dynamically from current speed and jump physics.
+ *
+ * @param {number} speed - Current running speed in px/s
+ * @param {number} [maxRatio=0.55] - Safe ratio of max jump distance
+ * @returns {number} Fair chasm width in pixels
+ */
+export function calculateSafeChasmWidth(speed, maxRatio = 0.55) {
+  const maxDistance = calculateMaxJumpDistance(speed);
+  const safeWidth = Math.round(maxDistance * maxRatio);
+  return Math.max(75, Math.min(185, safeWidth));
+}
+
+/**
+ * Checks if a falling player lands on top of a platform (one-way platform physics).
+ *
+ * @param {Object} player - { x, y, width, height, vy }
+ * @param {number} prevY - Player Y position in the previous frame
+ * @param {Object} platform - { x, y, width, height }
+ * @returns {boolean} True if player should land on the platform
+ */
+export function checkPlatformLanding(player, prevY, platform) {
+  if (!player || !platform || player.vy < 0) return false;
+
+  const playerLeft = player.x + (player.hitPadding?.x || 6);
+  const playerRight = player.x + player.width - (player.hitPadding?.w ? player.hitPadding.w - (player.hitPadding.x || 0) : 6);
+
+  const platLeft = platform.x;
+  const platRight = platform.x + platform.width;
+
+  // Check horizontal overlap
+  const isHorizontallyOverlapping = playerRight > platLeft && playerLeft < platRight;
+  if (!isHorizontallyOverlapping) return false;
+
+  const prevBottom = prevY + player.height;
+  const currentBottom = player.y + player.height;
+  const platTop = platform.y;
+
+  // Player bottom was above/near platform top and is now crossing or landing on it
+  const crossedTop = prevBottom <= platTop + 14 && currentBottom >= platTop - 2;
+  return crossedTop;
+}
+
+/**
+ * Checks if the player has fallen into a chasm (gap in the ground).
+ *
+ * @param {Object} player - { x, y, width, height }
+ * @param {Object} chasm - { x, width }
+ * @param {number} groundY - Baseline ground level Y coordinate
+ * @returns {boolean} True if player is falling through the gap
+ */
+export function checkPlayerInChasm(player, chasm, groundY) {
+  if (!player || !chasm) return false;
+
+  const playerCenterX = player.x + player.width / 2;
+  const isOverChasm = playerCenterX >= chasm.x && playerCenterX <= chasm.x + chasm.width;
+  const isBelowGround = (player.y + player.height) > groundY + 15;
+
+  return isOverChasm && isBelowGround;
 }
 
 /**
@@ -110,16 +246,19 @@ export function calculateSpawnInterval(elapsedSeconds, config = {}) {
  *
  * @param {number} elapsedSeconds - Survival time in seconds
  * @param {number} obstaclesCleared - Total obstacles successfully jumped over
+ * @param {number} [discsCollected=0] - Total discs collected
  * @param {Object} [config] - Score weights
  * @returns {number} Integer score
  */
-export function calculateScore(elapsedSeconds, obstaclesCleared = 0, config = {}) {
+export function calculateScore(elapsedSeconds, obstaclesCleared = 0, discsCollected = 0, config = {}) {
   const scorePerSec = config.scorePerSecond ?? GAME_CONFIG.SCORE_PER_SECOND;
   const bonusPerObstacle = config.obstacleBonus ?? GAME_CONFIG.OBSTACLE_CLEAR_BONUS;
+  const bonusPerDisc = config.discBonus ?? GAME_CONFIG.DISC_SCORE_BONUS;
 
   const timeScore = Math.max(0, elapsedSeconds) * scorePerSec;
   const obstacleScore = Math.max(0, obstaclesCleared) * bonusPerObstacle;
-  return Math.floor(timeScore + obstacleScore);
+  const discScore = Math.max(0, discsCollected) * bonusPerDisc;
+  return Math.floor(timeScore + obstacleScore + discScore);
 }
 
 /**
@@ -158,9 +297,7 @@ export function updateHighScores(currentScores, newEntry, maxEntries = 10) {
     scores.push(validEntry);
   }
 
-  // Sort descending by score; ties sorted by date/original order
   scores.sort((a, b) => b.score - a.score);
-
   return scores.slice(0, maxEntries);
 }
 
@@ -254,7 +391,6 @@ export const LIGHTING_KEYFRAMES = [
 
 /**
  * Computes the continuous Day-to-Night lighting cycle based on game time.
- * Transitions smoothly from Noon (t=0) to Cyberpunk Night (t >= 90s).
  *
  * @param {number} elapsedSeconds - Total gameplay time in seconds
  * @param {number} [duration=90] - Total transition time to full night
@@ -264,7 +400,6 @@ export function getDayNightCycle(elapsedSeconds, duration = GAME_CONFIG.DAY_NIGH
   const safeTime = Math.max(0, elapsedSeconds);
   const progress = Math.min(1, safeTime / duration);
 
-  // Find surrounding keyframes
   let prevFrame = LIGHTING_KEYFRAMES[0];
   let nextFrame = LIGHTING_KEYFRAMES[LIGHTING_KEYFRAMES.length - 1];
 
@@ -278,8 +413,6 @@ export function getDayNightCycle(elapsedSeconds, duration = GAME_CONFIG.DAY_NIGH
 
   const range = nextFrame.timeRatio - prevFrame.timeRatio;
   const segmentT = range === 0 ? 0 : (progress - prevFrame.timeRatio) / range;
-
-  // Linear interpolation helper for numbers
   const lerp = (a, b, t) => a + (b - a) * t;
 
   return {
@@ -299,31 +432,80 @@ export function getDayNightCycle(elapsedSeconds, duration = GAME_CONFIG.DAY_NIGH
 
 /**
  * Updates player physics for a single frame.
+ * Supports ground baseline and active elevated platforms.
  *
- * @param {Object} player - Player state object { y, vy, isGrounded, jumpsRemaining, height, ... }
+ * @param {Object} player - Player state object
  * @param {number} dt - Delta time in seconds
  * @param {number} groundY - Baseline ground level Y coordinate
+ * @param {Array<Object>} [platforms=[]] - List of active platforms
+ * @param {Array<Object>} [chasms=[]] - List of active chasms
  * @param {Object} [config] - Physics overrides
  * @returns {Object} Updated player reference
  */
-export function updatePlayerPhysics(player, dt, groundY, config = {}) {
+export function updatePlayerPhysics(player, dt, groundY, platforms = [], chasms = [], config = {}) {
   const gravity = config.gravity ?? GAME_CONFIG.GRAVITY;
   const maxFallSpeed = config.maxFallSpeed ?? GAME_CONFIG.MAX_FALL_SPEED;
+  const prevY = player.y;
 
+  // Apply gravity if not grounded
   if (!player.isGrounded) {
     player.vy = Math.min(maxFallSpeed, player.vy + gravity * dt);
     player.y += player.vy * dt;
   }
 
-  // Ground collision check
-  const playerBottom = player.y + player.height;
-  if (playerBottom >= groundY) {
-    player.y = groundY - player.height;
-    player.vy = 0;
-    player.isGrounded = true;
-    player.jumpsRemaining = 2; // Reset jump + double jump
-  } else {
-    player.isGrounded = false;
+  let landedOnPlatform = false;
+
+  // Check landing on active platforms
+  if (platforms && platforms.length > 0) {
+    for (const plat of platforms) {
+      if (checkPlatformLanding(player, prevY, plat)) {
+        player.y = plat.y - player.height;
+        player.vy = 0;
+        player.isGrounded = true;
+        player.currentPlatform = plat;
+        player.jumpsRemaining = 2;
+        landedOnPlatform = true;
+        break;
+      }
+    }
+  }
+
+  // If standing on a platform, check if walked off the edge
+  if (player.isGrounded && player.currentPlatform) {
+    const plat = player.currentPlatform;
+    const playerLeft = player.x + (player.hitPadding?.x || 6);
+    const playerRight = player.x + player.width - 6;
+    if (playerRight < plat.x || playerLeft > plat.x + plat.width || !platforms.includes(plat)) {
+      player.isGrounded = false;
+      player.currentPlatform = null;
+    }
+  }
+
+  // Ground collision check if not on a platform
+  if (!landedOnPlatform && !player.currentPlatform) {
+    const playerBottom = player.y + player.height;
+
+    // Check if player is over an active chasm
+    let overChasm = false;
+    if (chasms && chasms.length > 0) {
+      const playerCenterX = player.x + player.width / 2;
+      for (const chasm of chasms) {
+        if (playerCenterX >= chasm.x && playerCenterX <= chasm.x + chasm.width) {
+          overChasm = true;
+          break;
+        }
+      }
+    }
+
+    if (!overChasm && playerBottom >= groundY) {
+      player.y = groundY - player.height;
+      player.vy = 0;
+      player.isGrounded = true;
+      player.jumpsRemaining = 2;
+    } else if (overChasm) {
+      // Over chasm: player falls through ground
+      player.isGrounded = false;
+    }
   }
 
   // Update invulnerability timer if active
@@ -348,10 +530,13 @@ export function triggerPlayerJump(player, config = {}) {
   if (player.isGrounded || player.jumpsRemaining === 2) {
     player.vy = jumpForce;
     player.isGrounded = false;
+    player.currentPlatform = null;
     player.jumpsRemaining = 1;
     return "JUMP";
   } else if (player.jumpsRemaining === 1) {
     player.vy = doubleJumpForce;
+    player.isGrounded = false;
+    player.currentPlatform = null;
     player.jumpsRemaining = 0;
     return "DOUBLE_JUMP";
   }

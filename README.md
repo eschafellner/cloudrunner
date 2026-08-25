@@ -14,12 +14,24 @@ Ein schnelles, butterweich animiertes Jump-and-Run-Browser-Spiel im Cyberpunk-St
   - **Tap irgendwo auf den Bildschirm** oder den sichtbaren **Touch-Button (JUMP)** unten rechts.
   - Vollwertige **Hochformat-Unterstützung (Portrait Mode)** auf Smartphones und Tablets sowie klassisches 16:9 Querformat auf Desktops.
   - Zoom & Scrollen auf Mobilgeräten sind via `touch-action: manipulation` unterbunden.
-- **Leben-System:** 3 Leben. Bei Kollisionen gibt es visuellen Screen-Shake, Soundeffekt und eine 1,8-sekündige Unverwundbarkeitsphase.
+- **Leben-System:**
+  - Startet mit **3 Leben**, erweiterbar auf maximal **5 Leben** durch das Sammeln von Discs.
+  - Bei Kollision oder Sturz in einen Abgrund: 1 Leben Abzug, Screen-Shake, roter Flash, Soundeffekt und 1,8s Unverwundbarkeit.
+- **Sammelobjekt „Discs“:**
+  - Holographisch funkelnde CDs, einzeln oder in Formationen von 2–5 Stück (Reihen, Spalten, Sprungbögen).
+  - Jede Disc bringt Punkte; **20 Discs = +1 Extraleben** (bis max. 5 Leben). Der Zähler wird bei 20 und bei jedem Spielneustart auf 0 zurückgesetzt.
+  - HUD-Anzeige: `DISCS: 0/20`.
+- **Erhöhte Plattformen:**
+  - Schwebende Cyber-Plattformen, auf die der Spieler von oben landen, laufen und abspringen kann.
+  - Höhen und Distanzen sind exakt aus den Sprungparametern abgeleitet und bei jedem Tempo erreichbar.
+- **Abgründe (Chasms):**
+  - Lücken im Highway mit Laser-/Warnmarkierungen.
+  - Breiten sind physikbasiert so begrenzt, dass sie stets fair überspringbar oder über Plattformen passierbar sind.
+  - Ein Hineinfallen kostet 1 Leben und setzt den Spieler sicher auf die Fahrbahn zurück.
 - **Hindernisse:**
   1. *Cyber-Barrieren (Boden)*: Dreieckige Gefahrenhindernisse auf der Fahrbahn.
   2. *Laser-Gates (Hoch)*: Holographische, vertikal pulsierende Laserbarrieren.
   3. *Cyber-Drohnen (Fliegend)*: Schwebende Überwachungsdrohnen mit Wellenbewegung.
-- **Punkte:** Laufende Punkte für Überlebenszeit sowie Bonus-Punkte für jedes erfolgreich überwundene Hindernis (+25 Pkt., Streak-Meldungen bei je 10 Hindernissen).
 
 ---
 
@@ -32,16 +44,16 @@ Ein schnelles, butterweich animiertes Jump-and-Run-Browser-Spiel im Cyberpunk-St
   - In der Nacht leuchten **Fenster**, **holographische Werbetafeln**, **Antennen-Beacons**, **Boden-Gitterlinien** und **Cyber-Moon** in leuchtenden Neonfarben (Cyan `#00f0ff`, Pink `#ff007f`, Gelb `#ffe600`).
 - **Offscreen-Parallaxe (100% Ruckelfrei & Nahtlos):**
   - Texturen der Skyline werden auf Offscreen-Canvases vorberechnet und per exaktem Modulo nahtlos gekachelt.
-  - Dadurch entfallen teure Einzelaufrufe von `shadowBlur` pro Frame — garantiert stabile 60+ FPS ohne Ruckler oder sichtbares Nachladen.
+  - Garantiert stabile 60+ FPS ohne Ruckler oder sichtbares Nachladen.
 
 ---
 
 ## 🔊 Audio-Engine (Web Audio API)
 
 - **Soundeffekte:**
-  - Sprung (Frequenz-Chirp), Doppelsprung (Oktave-Gleiten), Schaden/Impact (Noise-Burst + Sawtooth-Drop), Meilenstein (Glocken-Arpeggio) und Game-Over-Drohne.
+  - Sprung (Frequenz-Chirp), Doppelsprung (Oktave-Gleiten), Disc-Pickup (Glitzer-Chime), Extraleben-Fanfare, Schaden/Impact (Noise-Burst + Sawtooth-Drop), Meilenstein (Glocken-Arpeggio) und Game-Over-Drohne.
 - **Hintergrundmusik:**
-  - Ein treibender, prozedural generierter Synthwave-Loop (124 BPM) mit 16tel-Bassline, Arpeggio-Melodie, Kick und Snare.
+  - Ein treibender Synthwave-Loop (124 BPM) mit 16tel-Bassline, Arpeggio-Melodie, Kick und Snare.
 - **Audio-Steuerung:**
   - Startet nach der ersten Nutzerinteraktion (konform zu Browser-Autoplay-Richtlinien).
   - Mute-Button oben rechts schaltet Audio stumm (wird in `localStorage` gemerkt).
@@ -52,13 +64,13 @@ Ein schnelles, butterweich animiertes Jump-and-Run-Browser-Spiel im Cyberpunk-St
 
 ```
 /
-├── index.html           # HTML5-Struktur, HUD, Overlays & Canvas-Container
+├── index.html           # HTML5-Struktur, HUD (Leben, Discs, Score), Overlays & Canvas
 ├── css/
-│   └── style.css        # Cyberpunk-Styling, CRT-Filter, responsive Touch-Layouts
+│   └── style.css        # Cyberpunk-Styling, Discs-HUD-Animation, responsive Touch-Layouts
 ├── js/
-│   ├── logic.js         # Reine, DOM-freie Spiellogik (Kollisionen, Tag-Nacht, Highscores)
-│   ├── audio.js         # Web Audio API Synthesizer (SFX + Synthwave-Musikloop)
-│   └── game.js          # Canvas-Rendering, Parallaxe, Input, Partikelsystem & Game Loop
+│   ├── logic.js         # Reine, DOM-freie Spiellogik (Kollisionen, Discs, Plattformen, Abgründe, Highscores)
+│   ├── audio.js         # Web Audio API Synthesizer (SFX inkl. Discs + Synthwave-Musikloop)
+│   └── game.js          # Canvas-Rendering, Plattformen, Discs, Abgründe, Parallaxe, Input & Game Loop
 ├── tests/
 │   └── logic.test.js    # Unit-Tests mit Node.js "node:test" & "node:assert"
 ├── package.json         # ES-Modul-Konfiguration & Test-Script
@@ -78,13 +90,11 @@ npm test
 node --test
 ```
 
-Alle 33 Testfälle laufen in wenigen Millisekunden durch.
+Alle 46 Testfälle laufen in wenigen Millisekunden durch.
 
 ---
 
 ## 🚀 Lokales Testen
-
-Da Standard-ES-Module (`<script type="module">`) verwendet werden, empfiehlt sich ein lokaler Webserver:
 
 ```bash
 # Mit Node.js (z. B. npx serve oder http-server):

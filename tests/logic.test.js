@@ -12,6 +12,12 @@ import {
   hexToRgb,
   updatePlayerPhysics,
   triggerPlayerJump,
+  updateDiscCollection,
+  calculateMaxJumpHeight,
+  calculateMaxJumpDistance,
+  calculateSafeChasmWidth,
+  checkPlatformLanding,
+  checkPlayerInChasm,
   GAME_CONFIG,
 } from '../js/logic.js';
 
@@ -49,6 +55,166 @@ describe('Logic Module - checkCollision()', () => {
   it('should handle null or invalid inputs safely', () => {
     assert.equal(checkCollision(null, { x: 0, y: 0, width: 10, height: 10 }), false);
     assert.equal(checkCollision(undefined, undefined), false);
+  });
+});
+
+describe('Logic Module - Collectible Discs & Extra Life System', () => {
+  it('should increment disc count by 1 normally', () => {
+    const res = updateDiscCollection(5, 3);
+    assert.equal(res.discs, 6);
+    assert.equal(res.lives, 3);
+    assert.equal(res.earnedExtraLife, false);
+  });
+
+  it('should award +1 life and reset discs to 0 when reaching 20 discs', () => {
+    const res = updateDiscCollection(19, 3);
+    assert.equal(res.discs, 0);
+    assert.equal(res.lives, 4);
+    assert.equal(res.earnedExtraLife, true);
+  });
+
+  it('should cap lives at MAX_LIVES (5) when reaching 20 discs', () => {
+    const res = updateDiscCollection(19, 5, 5, 20);
+    assert.equal(res.discs, 0);
+    assert.equal(res.lives, 5);
+    assert.equal(res.earnedExtraLife, true);
+  });
+
+  it('should handle overflow safely if discs already >= 20', () => {
+    const res = updateDiscCollection(20, 2);
+    assert.equal(res.discs, 0);
+    assert.equal(res.lives, 3);
+    assert.equal(res.earnedExtraLife, true);
+  });
+
+  it('should handle negative or undefined values safely', () => {
+    const res = updateDiscCollection(undefined, undefined);
+    assert.equal(res.discs, 1);
+    assert.equal(res.lives, 0);
+  });
+});
+
+describe('Logic Module - Platform Physics & Reachability', () => {
+  it('should calculate realistic max single-jump height', () => {
+    const height = calculateMaxJumpHeight(-680, 1850);
+    // H = (680^2) / (2 * 1850) = 462400 / 3700 = 124.97px
+    assert.ok(height > 120 && height < 130);
+  });
+
+  it('should calculate jump distance proportional to speed', () => {
+    const distBase = calculateMaxJumpDistance(360, -680, 1850);
+    const distFast = calculateMaxJumpDistance(720, -680, 1850);
+    assert.ok(distFast > distBase * 1.95);
+  });
+
+  it('should detect player landing on top of platform when falling', () => {
+    const platform = { x: 100, y: 350, width: 120, height: 16 };
+    const player = {
+      x: 120,
+      y: 300, // Bottom is at 356 (intersecting top at 350)
+      width: 38,
+      height: 56,
+      vy: 150, // Falling down
+    };
+    const prevY = 290; // Prev bottom was 346 (above platform)
+
+    const landed = checkPlatformLanding(player, prevY, platform);
+    assert.equal(landed, true);
+  });
+
+  it('should reject landing if player is moving upward (jumping through from below)', () => {
+    const platform = { x: 100, y: 350, width: 120, height: 16 };
+    const player = {
+      x: 120,
+      y: 300,
+      width: 38,
+      height: 56,
+      vy: -300, // Moving upward
+    };
+    const prevY = 310;
+
+    const landed = checkPlatformLanding(player, prevY, platform);
+    assert.equal(landed, false);
+  });
+
+  it('should reject landing if horizontally outside platform bounds', () => {
+    const platform = { x: 200, y: 350, width: 100, height: 16 };
+    const player = {
+      x: 50, // Left of platform
+      y: 300,
+      width: 38,
+      height: 56,
+      vy: 200,
+    };
+    const prevY = 290;
+
+    const landed = checkPlatformLanding(player, prevY, platform);
+    assert.equal(landed, false);
+  });
+
+  it('should land player on platform and allow walking off the edge', () => {
+    const platform = { x: 100, y: 380, width: 100, height: 16 };
+    const groundY = 460;
+    const player = {
+      x: 120,
+      y: 320,
+      vy: 50,
+      width: 38,
+      height: 56,
+      isGrounded: false,
+      jumpsRemaining: 0,
+      currentPlatform: null,
+    };
+
+    // Step 1: Lands on platform
+    updatePlayerPhysics(player, 0.05, groundY, [platform], []);
+    assert.equal(player.isGrounded, true);
+    assert.equal(player.y, platform.y - player.height); // 380 - 56 = 324
+    assert.equal(player.currentPlatform, platform);
+    assert.equal(player.jumpsRemaining, 2);
+
+    // Step 2: Player walks off right edge (x moves beyond platform)
+    player.x = 220;
+    updatePlayerPhysics(player, 0.05, groundY, [platform], []);
+    assert.equal(player.isGrounded, false);
+    assert.equal(player.currentPlatform, null);
+  });
+});
+
+describe('Logic Module - Chasms & Jump Balancing', () => {
+  it('should derive fair chasm widths within jumpable limits', () => {
+    const widthSlow = calculateSafeChasmWidth(360);
+    const widthFast = calculateSafeChasmWidth(780);
+
+    assert.ok(widthSlow >= 75 && widthSlow <= 150);
+    assert.ok(widthFast >= widthSlow && widthFast <= 185);
+  });
+
+  it('should detect when player falls into a chasm', () => {
+    const chasm = { x: 100, width: 120 };
+    const groundY = 460;
+    const playerIn = {
+      x: 130,
+      y: 430, // Bottom at 486 (> groundY + 15)
+      width: 38,
+      height: 56,
+    };
+    const playerAbove = {
+      x: 130,
+      y: 360, // Bottom at 416 (above ground level)
+      width: 38,
+      height: 56,
+    };
+    const playerOutside = {
+      x: 20, // Not over chasm
+      y: 430,
+      width: 38,
+      height: 56,
+    };
+
+    assert.equal(checkPlayerInChasm(playerIn, chasm, groundY), true);
+    assert.equal(checkPlayerInChasm(playerAbove, chasm, groundY), false);
+    assert.equal(checkPlayerInChasm(playerOutside, chasm, groundY), false);
   });
 });
 
@@ -101,17 +267,17 @@ describe('Logic Module - calculateSpawnInterval()', () => {
 });
 
 describe('Logic Module - calculateScore()', () => {
-  it('should calculate time-based score and obstacle bonuses', () => {
-    const score = calculateScore(10, 3); // 10s * 10 + 3 * 25 = 100 + 75 = 175
-    assert.equal(score, 175);
+  it('should calculate time-based score, obstacle bonus and disc bonus', () => {
+    const score = calculateScore(10, 3, 5); // 10s * 10 + 3 * 25 + 5 * 10 = 100 + 75 + 50 = 225
+    assert.equal(score, 225);
   });
 
-  it('should return 0 for t = 0 and 0 obstacles', () => {
-    assert.equal(calculateScore(0, 0), 0);
+  it('should return 0 for t = 0 and 0 obstacles/discs', () => {
+    assert.equal(calculateScore(0, 0, 0), 0);
   });
 
   it('should handle negative inputs by clamping to 0', () => {
-    assert.equal(calculateScore(-5, -2), 0);
+    assert.equal(calculateScore(-5, -2, -1), 0);
   });
 });
 
@@ -271,16 +437,15 @@ describe('Logic Module - Player Physics & Jump Logic', () => {
       y: 350,
       vy: 100,
       width: 32,
-      height: 48, // player bottom starts at 398
+      height: 48,
       isGrounded: false,
       jumpsRemaining: 0,
       invulnerabilityTimer: 1.0,
     };
 
     const dt = 0.05; // 50ms
-    updatePlayerPhysics(player, dt, groundY);
+    updatePlayerPhysics(player, dt, groundY, [], []);
 
-    // Player bottom exceeds 400, so lands on ground
     assert.equal(player.y, groundY - player.height); // 400 - 48 = 352
     assert.equal(player.vy, 0);
     assert.equal(player.isGrounded, true);
