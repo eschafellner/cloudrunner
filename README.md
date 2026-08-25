@@ -1,6 +1,6 @@
 # 🌆 Cloud Runner — Cyberpunk Jump-and-Run
 
-Ein schnelles, atmosphärisches Jump-and-Run-Browser-Spiel im Cyberpunk-Stil, entwickelt mit reinem HTML5 Canvas, CSS3 und modernem JavaScript (ES2020+). Komplett ohne externe Frameworks, Bundler oder Audio-Dateien (100% prozedurale Grafik und Web Audio API Sound-Synthese).
+Ein schnelles, butterweich animiertes Jump-and-Run-Browser-Spiel im Cyberpunk-Stil, entwickelt mit reinem HTML5 Canvas, CSS3 und modernem JavaScript (ES2020+). Komplett ohne externe Frameworks, Bundler oder Audio-Dateien (100% prozedurale Grafik und Web Audio API Sound-Synthese).
 
 ---
 
@@ -10,8 +10,9 @@ Ein schnelles, atmosphärisches Jump-and-Run-Browser-Spiel im Cyberpunk-Stil, en
 - **Steuerung Desktop:**
   - `Leertaste`, `Pfeiltaste Oben` (▲) oder `W`: **Springen**
   - Erneutes Drücken in der Luft: **Doppelsprung**
-- **Steuerung Mobile / Touch:**
+- **Steuerung Mobile / Touch (Quer- & Hochformat):**
   - **Tap irgendwo auf den Bildschirm** oder den sichtbaren **Touch-Button (JUMP)** unten rechts.
+  - Vollwertige **Hochformat-Unterstützung (Portrait Mode)** auf Smartphones und Tablets sowie klassisches 16:9 Querformat auf Desktops.
   - Zoom & Scrollen auf Mobilgeräten sind via `touch-action: manipulation` unterbunden.
 - **Leben-System:** 3 Leben. Bei Kollisionen gibt es visuellen Screen-Shake, Soundeffekt und eine 1,8-sekündige Unverwundbarkeitsphase.
 - **Hindernisse:**
@@ -29,11 +30,9 @@ Ein schnelles, atmosphärisches Jump-and-Run-Browser-Spiel im Cyberpunk-Stil, en
   - Wandelt sich kontinuierlich über **Nachmittag** und **Dämmerung** (flammendes Orange, Magenta, Violett).
   - Erreicht nach ca. **90 Sekunden** die tiefe **Cyberpunk-Nacht** (Mitternachtsblau/Dunkelviolett).
   - In der Nacht leuchten **Fenster**, **holographische Werbetafeln**, **Antennen-Beacons**, **Boden-Gitterlinien** und **Cyber-Moon** in leuchtenden Neonfarben (Cyan `#00f0ff`, Pink `#ff007f`, Gelb `#ffe600`).
-- **Mehrschichtige Parallaxe:**
-  - Schicht 0: Dynamischer Himmel, funkelnde Sterne, Sonne & Cyber-Mond.
-  - Schicht 1: Weit entfernte Wolkenkratzer-Silhouetten und fliegende Cyber-Autos mit Lichtspuren.
-  - Schicht 2: Mittlere Hochhäuser mit zufälligen Fenster-Mustern und blinkenden Hologrammen.
-  - Schicht 3: Perspektivisch bewegtes Neon-Raster auf der Fahrbahn.
+- **Offscreen-Parallaxe (100% Ruckelfrei & Nahtlos):**
+  - Texturen der Skyline werden auf Offscreen-Canvases vorberechnet und per exaktem Modulo nahtlos gekachelt.
+  - Dadurch entfallen teure Einzelaufrufe von `shadowBlur` pro Frame — garantiert stabile 60+ FPS ohne Ruckler oder sichtbares Nachladen.
 
 ---
 
@@ -79,7 +78,7 @@ npm test
 node --test
 ```
 
-Alle 33 Testfälle für Kollisionserkennung, Geschwindigkeitskurve, Spawn-Intervalle, Highscore-Verwaltung, Namensvalidierung, Tag-Nacht-Farbinterpolation und Spieler-Physik laufen in wenigen Millisekunden durch.
+Alle 33 Testfälle laufen in wenigen Millisekunden durch.
 
 ---
 
@@ -95,7 +94,7 @@ npx serve .
 python3 -m http.server 8080
 ```
 
-Anschließend im Browser `http://localhost:8080` (oder die angezeigte URL) aufrufen.
+Anschließend im Browser `http://localhost:8080` aufrufen.
 
 ---
 
@@ -117,12 +116,3 @@ Das Spiel ist als rein statische Website konzipiert und benötigt keinen Build-S
 1. Im Cloudflare Dashboard unter **Pages** $\to$ **Upload assets** wählen.
 2. Alle Dateien des Projektordners (`index.html`, `css/`, `js/`, etc.) per Drag & Drop hochladen.
 3. Bereitstellung bestätigen.
-
----
-
-## 💾 Persistenz
-
-- Highscores und Mute-Status werden clientseitig im `localStorage` des Browsers gespeichert:
-  - `cloudrunner_highscores`: Top-Highscore-Liste mit Spielername, Punkten und Datum.
-  - `cloudrunner_muted`: Stummschaltungs-Status.
-# cloudrunner

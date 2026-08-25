@@ -1,6 +1,7 @@
 /**
  * game.js - Canvas Rendering, Input Handling, Parallax City & Game Loop
  * Integrates logic.js and audio.js
+ * Optimized with offscreen-cached parallax layers & responsive portrait/landscape support.
  */
 
 import {
@@ -17,11 +18,6 @@ import {
 } from './logic.js';
 
 import { soundEngine } from './audio.js';
-
-// Virtual internal resolution (16:9)
-const V_WIDTH = 960;
-const V_HEIGHT = 540;
-const GROUND_Y = 460;
 
 class Game {
   constructor() {
@@ -43,6 +39,13 @@ class Game {
     this.highscoreListEl = document.getElementById('highscore-list');
     this.mobileJumpBtn = document.getElementById('mobile-jump-btn');
 
+    // Responsive virtual resolution
+    this.vWidth = 960;
+    this.vHeight = 540;
+    this.groundY = 460;
+    this.isPortrait = false;
+    this.scale = 1;
+
     // Game state
     this.state = 'START'; // 'START' | 'PLAYING' | 'GAMEOVER'
     this.gameTime = 0;
@@ -58,7 +61,7 @@ class Game {
     // Player object
     this.player = {
       x: 120,
-      y: GROUND_Y - 56,
+      y: this.groundY - 56,
       width: 38,
       height: 56,
       vy: 0,
@@ -84,17 +87,17 @@ class Game {
     // Floating text popups
     this.floatingTexts = [];
 
-    // Parallax background layers
-    this.stars = this.generateStars(60);
-    this.distantCity = this.generateBuildings(14, 180, 280, 70, 140);
-    this.midCity = this.generateBuildings(18, 120, 220, 50, 100, true);
-    this.flyingCars = this.generateFlyingCars(4);
+    // Pre-rendered Parallax background layers (Offscreen Canvases)
+    this.stars = this.generateStars(80);
+    this.distantLayer = this.createCityLayerTexture(16, 260, 380, 80, 160, '#120f24', false);
+    this.midLayer = this.createCityLayerTexture(20, 180, 300, 60, 130, '#090714', true);
+    this.flyingCars = this.generateFlyingCars(5);
 
     this.distantScrollX = 0;
     this.midScrollX = 0;
     this.groundScrollX = 0;
 
-    // High scores
+    // High scores & lighting
     this.highScores = this.loadHighScores();
     this.currentLighting = getDayNightCycle(0);
 
@@ -106,7 +109,7 @@ class Game {
     requestAnimationFrame((t) => this.loop(t));
   }
 
-  /* ------------------- INITIALIZATION & RESIZING ------------------- */
+  /* ------------------- INITIALIZATION & OFFSCREEN TEXTURES ------------------- */
 
   initObstaclePool(size) {
     for (let i = 0; i < size; i++) {
@@ -145,8 +148,8 @@ class Game {
     const stars = [];
     for (let i = 0; i < count; i++) {
       stars.push({
-        x: Math.random() * V_WIDTH,
-        y: Math.random() * (GROUND_Y - 160),
+        x: Math.random() * 1200,
+        y: Math.random() * 700,
         size: Math.random() * 2 + 0.8,
         twinkleSpeed: Math.random() * 3 + 1,
       });
@@ -154,19 +157,37 @@ class Game {
     return stars;
   }
 
-  generateBuildings(count, minHeight, maxHeight, minWidth, maxWidth, withBillboards = false) {
+  generateFlyingCars(count) {
+    const cars = [];
+    for (let i = 0; i < count; i++) {
+      cars.push({
+        x: Math.random() * 1000,
+        y: 60 + Math.random() * 220,
+        speed: (Math.random() > 0.5 ? 1 : -1) * (40 + Math.random() * 80),
+        color: Math.random() > 0.5 ? '#00f0ff' : '#ff007f',
+        length: 22 + Math.random() * 14,
+      });
+    }
+    return cars;
+  }
+
+  /**
+   * Generates and pre-renders an offscreen parallax city strip.
+   * Eliminates per-frame building/window redraws and delivers locked 60+ FPS.
+   */
+  createCityLayerTexture(count, minHeight, maxHeight, minWidth, maxWidth, baseColor, withBillboards = false) {
     const buildings = [];
     let currentX = 0;
-    const billboardLabels = ['CYBER', 'NEO-2088', 'CLOUD', 'RUN', '404', 'SYNTH', 'CORP', 'AI'];
+    const billboardLabels = ['CYBER', 'NEO-2088', 'CLOUD', 'RUN', '404', 'SYNTH', 'CORP', 'AI', 'MATRIX'];
 
     for (let i = 0; i < count; i++) {
-      const width = minWidth + Math.random() * (maxWidth - minWidth);
-      const height = minHeight + Math.random() * (maxHeight - minHeight);
-      const hasAntenna = Math.random() > 0.4;
-      const hasBillboard = withBillboards && Math.random() > 0.65;
+      const width = Math.round(minWidth + Math.random() * (maxWidth - minWidth));
+      const height = Math.round(minHeight + Math.random() * (maxHeight - minHeight));
+      const hasAntenna = Math.random() > 0.35;
+      const antennaHeight = Math.round(20 + Math.random() * 35);
+      const hasBillboard = withBillboards && Math.random() > 0.6;
       const billboardText = hasBillboard ? billboardLabels[Math.floor(Math.random() * billboardLabels.length)] : null;
 
-      // Window grid
       const rows = Math.floor(height / 18);
       const cols = Math.floor(width / 14);
       const windowGrid = [];
@@ -186,30 +207,110 @@ class Game {
         width,
         height,
         hasAntenna,
-        antennaHeight: 15 + Math.random() * 25,
+        antennaHeight,
         hasBillboard,
         billboardText,
         windowGrid,
       });
 
-      currentX += width + (Math.random() * 15 - 5);
+      currentX += width + 6;
     }
-    return buildings;
+
+    const totalWidth = currentX;
+    const totalHeight = maxHeight + 60;
+
+    // 1. Offscreen Canvas for Base Silhouettes
+    const baseCanvas = document.createElement('canvas');
+    baseCanvas.width = totalWidth;
+    baseCanvas.height = totalHeight;
+    const bCtx = baseCanvas.getContext('2d');
+
+    // 2. Offscreen Canvas for Neon Windows & Holograms
+    const neonCanvas = document.createElement('canvas');
+    neonCanvas.width = totalWidth;
+    neonCanvas.height = totalHeight;
+    const nCtx = neonCanvas.getContext('2d');
+
+    buildings.forEach(b => {
+      const bx = b.x;
+      const by = totalHeight - b.height;
+
+      // Base building silhouette
+      bCtx.fillStyle = baseColor;
+      bCtx.fillRect(bx, by, b.width, b.height);
+
+      // Roof Antenna
+      if (b.hasAntenna) {
+        bCtx.strokeStyle = '#221f33';
+        bCtx.lineWidth = 2;
+        bCtx.beginPath();
+        bCtx.moveTo(bx + b.width / 2, by);
+        bCtx.lineTo(bx + b.width / 2, by - b.antennaHeight);
+        bCtx.stroke();
+
+        // Blinking beacon on neon canvas
+        nCtx.fillStyle = '#ff0055';
+        nCtx.beginPath();
+        nCtx.arc(bx + b.width / 2, by - b.antennaHeight, 3, 0, Math.PI * 2);
+        nCtx.fill();
+      }
+
+      // Windows
+      const padX = 6;
+      const padY = 8;
+      const winW = 4;
+      const winH = 5;
+
+      b.windowGrid.forEach((row, rIdx) => {
+        row.forEach((win, cIdx) => {
+          const wx = bx + padX + cIdx * (winW + 6);
+          const wy = by + padY + rIdx * (winH + 8);
+
+          if (wx + winW < bx + b.width - 4 && wy + winH < totalHeight - 4) {
+            if (win.lit) {
+              nCtx.fillStyle = win.color;
+              nCtx.fillRect(wx, wy, winW, winH);
+            } else {
+              // Unlit daytime window frame
+              bCtx.fillStyle = 'rgba(255, 255, 255, 0.04)';
+              bCtx.fillRect(wx, wy, winW, winH);
+            }
+          }
+        });
+      });
+
+      // Holographic Billboard
+      if (b.hasBillboard) {
+        const hbx = bx + 6;
+        const hby = by + 14;
+        const hbw = b.width - 12;
+        const hbh = 22;
+
+        if (hbw > 24) {
+          nCtx.strokeStyle = '#ff007f';
+          nCtx.lineWidth = 1.5;
+          nCtx.strokeRect(hbx, hby, hbw, hbh);
+
+          nCtx.fillStyle = 'rgba(10, 0, 30, 0.75)';
+          nCtx.fillRect(hbx, hby, hbw, hbh);
+
+          nCtx.fillStyle = '#00f0ff';
+          nCtx.font = 'bold 10px monospace';
+          nCtx.textAlign = 'center';
+          nCtx.fillText(b.billboardText, hbx + hbw / 2, hby + 15);
+        }
+      }
+    });
+
+    return {
+      baseCanvas,
+      neonCanvas,
+      width: totalWidth,
+      height: totalHeight,
+    };
   }
 
-  generateFlyingCars(count) {
-    const cars = [];
-    for (let i = 0; i < count; i++) {
-      cars.push({
-        x: Math.random() * V_WIDTH,
-        y: 60 + Math.random() * 160,
-        speed: (Math.random() > 0.5 ? 1 : -1) * (40 + Math.random() * 80),
-        color: Math.random() > 0.5 ? '#00f0ff' : '#ff007f',
-        length: 22 + Math.random() * 14,
-      });
-    }
-    return cars;
-  }
+  /* ------------------- RESPONSIVE VIEWPORT & ORIENTATION ------------------- */
 
   resizeCanvas() {
     const container = document.getElementById('canvas-container');
@@ -217,25 +318,54 @@ class Game {
 
     const contWidth = container.clientWidth;
     const contHeight = container.clientHeight;
-    const targetAspect = V_WIDTH / V_HEIGHT;
-    const windowAspect = contWidth / contHeight;
 
-    let displayW, displayH;
-    if (windowAspect > targetAspect) {
-      displayH = contHeight;
-      displayW = contHeight * targetAspect;
+    this.isPortrait = contWidth < contHeight;
+
+    if (this.isPortrait) {
+      // Portrait Mode: Taller screen, comfortable ground & sky room
+      this.vWidth = 540;
+      this.vHeight = Math.max(760, Math.min(1080, Math.round(540 * (contHeight / contWidth))));
+      this.groundY = this.vHeight - 160;
+      this.player.x = 75;
     } else {
-      displayW = contWidth;
-      displayH = contWidth / targetAspect;
+      // Landscape Mode: Classic 16:9 cinematic aspect ratio
+      this.vWidth = 960;
+      this.vHeight = 540;
+      this.groundY = 460;
+      this.player.x = 120;
     }
 
+    // Set canvas dimensions with HiDPI support
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    this.canvas.width = V_WIDTH * dpr;
-    this.canvas.height = V_HEIGHT * dpr;
+    this.canvas.width = this.vWidth * dpr;
+    this.canvas.height = this.vHeight * dpr;
+
+    // Fill the container completely while preserving aspect ratio
+    const scaleX = contWidth / this.vWidth;
+    const scaleY = contHeight / this.vHeight;
+    const fitScale = Math.min(scaleX, scaleY);
+
+    const displayW = Math.round(this.vWidth * fitScale);
+    const displayH = Math.round(this.vHeight * fitScale);
+
     this.canvas.style.width = `${displayW}px`;
     this.canvas.style.height = `${displayH}px`;
 
     this.scale = dpr;
+
+    // Adjust player if grounded
+    if (this.player.isGrounded) {
+      this.player.y = this.groundY - this.player.height;
+    }
+
+    // Update active obstacle Y positions on ground change
+    this.activeObstacles.forEach(obs => {
+      if (obs.type === 'BARRIER' || obs.type === 'LASER') {
+        obs.y = this.groundY - obs.height;
+      } else if (obs.type === 'DRONE') {
+        obs.baseY = this.groundY - 105;
+      }
+    });
   }
 
   initEventListeners() {
@@ -361,7 +491,7 @@ class Game {
     this.spawnTimer = 0.5; // Quick initial obstacle
     this.currentSpeed = GAME_CONFIG.BASE_SPEED;
 
-    this.player.y = GROUND_Y - this.player.height;
+    this.player.y = this.groundY - this.player.height;
     this.player.vy = 0;
     this.player.isGrounded = true;
     this.player.jumpsRemaining = 2;
@@ -397,7 +527,6 @@ class Game {
     this.renderHighscoreList();
     this.gameOverOverlay.classList.remove('hidden');
 
-    // Auto focus name input on desktop
     setTimeout(() => {
       if (this.playerNameInput) {
         this.playerNameInput.focus();
@@ -493,7 +622,6 @@ class Game {
     const obstacle = this.obstaclePool.find(o => !o.active);
     if (!obstacle) return;
 
-    // Pick obstacle type based on elapsed time
     const types = ['BARRIER'];
     if (this.gameTime > 15) types.push('LASER');
     if (this.gameTime > 30) types.push('DRONE');
@@ -503,25 +631,22 @@ class Game {
     obstacle.type = type;
     obstacle.cleared = false;
     obstacle.animTimer = 0;
-    obstacle.x = V_WIDTH + 50;
+    obstacle.x = this.vWidth + 50;
 
     if (type === 'BARRIER') {
-      // Ground triangular cyber barrier
       obstacle.width = 34;
       obstacle.height = 42;
-      obstacle.y = GROUND_Y - obstacle.height;
+      obstacle.y = this.groundY - obstacle.height;
       obstacle.hitPadding = { x: 6, y: 6, w: 12, h: 8 };
     } else if (type === 'LASER') {
-      // Tall holographic laser barrier
       obstacle.width = 24;
       obstacle.height = 72;
-      obstacle.y = GROUND_Y - obstacle.height;
+      obstacle.y = this.groundY - obstacle.height;
       obstacle.hitPadding = { x: 4, y: 4, w: 8, h: 6 };
     } else if (type === 'DRONE') {
-      // Floating cyber drone
       obstacle.width = 36;
       obstacle.height = 30;
-      obstacle.baseY = GROUND_Y - 95 - Math.random() * 30;
+      obstacle.baseY = this.groundY - 105 - Math.random() * 30;
       obstacle.y = obstacle.baseY;
       obstacle.hitPadding = { x: 4, y: 4, w: 8, h: 8 };
     }
@@ -594,7 +719,6 @@ class Game {
   }
 
   update(dt) {
-    // Decay visual shakes/flashes
     if (this.screenShake > 0) {
       this.screenShake = Math.max(0, this.screenShake - dt * 25);
     }
@@ -603,7 +727,6 @@ class Game {
     }
 
     if (this.state !== 'PLAYING') {
-      // Still update lighting and background for lively menu
       this.currentLighting = getDayNightCycle(this.gameTime);
       this.updateBackground(dt, 50);
       return;
@@ -614,7 +737,7 @@ class Game {
     this.currentLighting = getDayNightCycle(this.gameTime);
 
     // Update Player Physics
-    updatePlayerPhysics(this.player, dt, GROUND_Y);
+    updatePlayerPhysics(this.player, dt, this.groundY);
 
     // Player running animation frame
     this.player.runFrame = (this.player.runFrame + dt * (this.currentSpeed / 30)) % 8;
@@ -623,7 +746,7 @@ class Game {
     if (this.player.trail.length > 8) this.player.trail.shift();
     this.player.trail.push({ x: this.player.x, y: this.player.y });
 
-    // Update Obstacle Spawner
+    // Update Spawner
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
       this.spawnObstacle();
@@ -695,7 +818,7 @@ class Game {
     this.score = calculateScore(this.gameTime, this.obstaclesCleared);
     this.updateHUD();
 
-    // Scroll Backgrounds
+    // Scroll Backgrounds (Seamless modulo by exact texture width)
     this.updateBackground(dt, this.currentSpeed);
   }
 
@@ -715,15 +838,16 @@ class Game {
   }
 
   updateBackground(dt, speed) {
-    this.distantScrollX = (this.distantScrollX + speed * 0.12 * dt) % (V_WIDTH * 2);
-    this.midScrollX = (this.midScrollX + speed * 0.4 * dt) % (V_WIDTH * 2);
+    // Seamless wrapping using exact offscreen texture width
+    this.distantScrollX = (this.distantScrollX + speed * 0.12 * dt) % this.distantLayer.width;
+    this.midScrollX = (this.midScrollX + speed * 0.40 * dt) % this.midLayer.width;
     this.groundScrollX = (this.groundScrollX + speed * dt) % 60;
 
     // Move flying cars
     this.flyingCars.forEach(car => {
       car.x += car.speed * dt;
-      if (car.speed > 0 && car.x > V_WIDTH + 100) car.x = -100;
-      if (car.speed < 0 && car.x < -100) car.x = V_WIDTH + 100;
+      if (car.speed > 0 && car.x > this.vWidth + 100) car.x = -100;
+      if (car.speed < 0 && car.x < -100) car.x = this.vWidth + 100;
     });
   }
 
@@ -743,16 +867,16 @@ class Game {
     // 1. Sky & Celestial (Sun / Moon)
     this.renderSky();
 
-    // 2. Distant Parallax City
-    this.renderParallaxLayer(this.distantCity, this.distantScrollX, 0.6, 0.4);
+    // 2. Distant Parallax City (Pre-rendered texture)
+    this.renderParallaxLayer(this.distantLayer, this.distantScrollX, 0.65, 0.4);
 
     // 3. Flying Cyber-Cars in Sky
     this.renderFlyingCars();
 
-    // 4. Mid-ground Parallax City with Glowing Windows & Neon Billboards
-    this.renderParallaxLayer(this.midCity, this.midScrollX, 1.0, 0.85);
+    // 4. Mid-ground Parallax City with Glowing Windows & Holograms (Pre-rendered texture)
+    this.renderParallaxLayer(this.midLayer, this.midScrollX, 1.0, 1.0);
 
-    // 5. Cyber-Highway / Runway Ground
+    // 5. Cyber-Highway Ground
     this.renderGround();
 
     // 6. Active Obstacles
@@ -770,45 +894,46 @@ class Game {
     // 10. Damage Screen Flash
     if (this.screenFlash > 0) {
       this.ctx.fillStyle = `rgba(255, 0, 80, ${this.screenFlash * 0.4})`;
-      this.ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+      this.ctx.fillRect(0, 0, this.vWidth, this.vHeight);
     }
 
-    // 11. Subtle Vignette / Cyber Scanlines
+    // 11. Subtle Vignette & Scanlines
     this.renderVignetteAndScanlines();
 
     this.ctx.restore();
   }
 
   renderSky() {
-    const { skyTop, skyBottom, sunAlpha, moonAlpha, ambient, neonIntensity } = this.currentLighting;
+    const { skyTop, skyBottom, sunAlpha, moonAlpha, neonIntensity } = this.currentLighting;
 
-    const grad = this.ctx.createLinearGradient(0, 0, 0, GROUND_Y);
+    const grad = this.ctx.createLinearGradient(0, 0, 0, this.groundY);
     grad.addColorStop(0, skyTop);
     grad.addColorStop(1, skyBottom);
     this.ctx.fillStyle = grad;
-    this.ctx.fillRect(-50, -50, V_WIDTH + 100, V_HEIGHT + 100);
+    this.ctx.fillRect(-50, -50, this.vWidth + 100, this.vHeight + 100);
 
-    // Stars (visible as dusk/night approaches)
+    // Stars
     if (moonAlpha > 0.1) {
       this.ctx.save();
       this.stars.forEach(star => {
-        const twinkle = 0.5 + 0.5 * Math.sin(this.gameTime * star.twinkleSpeed);
-        this.ctx.fillStyle = `rgba(255, 255, 255, ${moonAlpha * twinkle * 0.85})`;
-        this.ctx.beginPath();
-        this.ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
-        this.ctx.fill();
+        if (star.x <= this.vWidth && star.y < this.groundY - 100) {
+          const twinkle = 0.5 + 0.5 * Math.sin(this.gameTime * star.twinkleSpeed);
+          this.ctx.fillStyle = `rgba(255, 255, 255, ${moonAlpha * twinkle * 0.85})`;
+          this.ctx.beginPath();
+          this.ctx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+          this.ctx.fill();
+        }
       });
       this.ctx.restore();
     }
 
-    // Sun (Descends as time progresses)
+    // Sun
     if (sunAlpha > 0.01) {
-      const sunX = V_WIDTH * 0.75 - this.gameTime * 3;
-      const sunY = 90 + this.gameTime * 2.2;
+      const sunX = this.vWidth * 0.78 - this.gameTime * 2.5;
+      const sunY = this.vHeight * 0.16 + this.gameTime * 1.8;
       this.ctx.save();
       this.ctx.globalAlpha = sunAlpha;
 
-      // Sun halo glow
       const sunGlow = this.ctx.createRadialGradient(sunX, sunY, 15, sunX, sunY, 70);
       sunGlow.addColorStop(0, 'rgba(255, 240, 180, 0.8)');
       sunGlow.addColorStop(0.5, 'rgba(255, 170, 50, 0.3)');
@@ -818,7 +943,6 @@ class Game {
       this.ctx.arc(sunX, sunY, 70, 0, Math.PI * 2);
       this.ctx.fill();
 
-      // Sun core
       this.ctx.fillStyle = '#fff4cc';
       this.ctx.beginPath();
       this.ctx.arc(sunX, sunY, 24, 0, Math.PI * 2);
@@ -826,14 +950,13 @@ class Game {
       this.ctx.restore();
     }
 
-    // Cyberpunk Moon (Rises with neon cyan halo)
+    // Cyber Moon
     if (moonAlpha > 0.01) {
-      const moonX = V_WIDTH * 0.82;
-      const moonY = 110 - Math.min(40, (this.gameTime - 45) * 1.5);
+      const moonX = this.vWidth * 0.82;
+      const moonY = this.vHeight * 0.18 - Math.min(30, (this.gameTime - 45) * 1.2);
       this.ctx.save();
       this.ctx.globalAlpha = moonAlpha;
 
-      // Outer neon ring halo
       const moonGlow = this.ctx.createRadialGradient(moonX, moonY, 20, moonX, moonY, 80);
       moonGlow.addColorStop(0, 'rgba(0, 240, 255, 0.7)');
       moonGlow.addColorStop(0.4, 'rgba(255, 0, 127, 0.25)');
@@ -843,7 +966,6 @@ class Game {
       this.ctx.arc(moonX, moonY, 80, 0, Math.PI * 2);
       this.ctx.fill();
 
-      // Cyber Moon Orb
       this.ctx.fillStyle = '#e6ffff';
       this.ctx.shadowColor = '#00f0ff';
       this.ctx.shadowBlur = 18 * neonIntensity;
@@ -851,7 +973,6 @@ class Game {
       this.ctx.arc(moonX, moonY, 28, 0, Math.PI * 2);
       this.ctx.fill();
 
-      // Cyber Moon Grid rings
       this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.4)';
       this.ctx.lineWidth = 1.5;
       this.ctx.stroke();
@@ -859,105 +980,29 @@ class Game {
     }
   }
 
-  renderParallaxLayer(buildings, scrollX, alpha, scale) {
-    const { buildingTint, neonIntensity } = this.currentLighting;
-    const totalWidth = buildings.reduce((acc, b) => acc + b.width + 5, 0);
+  /**
+   * High-performance pre-rendered layer renderer.
+   * Seamlessly tiles offscreen texture with zero frame drops.
+   */
+  renderParallaxLayer(layer, scrollX, alpha, neonWeight) {
+    const { neonIntensity } = this.currentLighting;
+    const y = this.groundY - layer.height;
 
     this.ctx.save();
-    this.ctx.globalAlpha = alpha;
+    let startX = -(scrollX % layer.width);
 
-    // Loop seamless building tiles
-    for (let offset = -totalWidth; offset < V_WIDTH + totalWidth; offset += totalWidth) {
-      let curX = offset - scrollX;
+    while (startX < this.vWidth) {
+      // 1. Draw Base Silhouette
+      this.ctx.globalAlpha = alpha;
+      this.ctx.drawImage(layer.baseCanvas, startX, y);
 
-      buildings.forEach(b => {
-        const renderX = curX;
-        const renderY = GROUND_Y - b.height * scale;
-        const renderW = b.width;
-        const renderH = b.height * scale;
+      // 2. Draw Neon Overlay (Glows dynamically as night falls)
+      if (neonIntensity > 0.05) {
+        this.ctx.globalAlpha = alpha * (0.15 + 0.85 * neonIntensity) * neonWeight;
+        this.ctx.drawImage(layer.neonCanvas, startX, y);
+      }
 
-        if (renderX + renderW > -50 && renderX < V_WIDTH + 50) {
-          // Building silhouette
-          this.ctx.fillStyle = buildingTint;
-          this.ctx.fillRect(renderX, renderY, renderW, renderH);
-
-          // Roof antenna with beacon
-          if (b.hasAntenna) {
-            this.ctx.strokeStyle = '#222';
-            this.ctx.lineWidth = 1.5;
-            this.ctx.beginPath();
-            this.ctx.moveTo(renderX + renderW / 2, renderY);
-            this.ctx.lineTo(renderX + renderW / 2, renderY - b.antennaHeight * scale);
-            this.ctx.stroke();
-
-            // Blinking beacon
-            const blink = Math.sin(this.gameTime * 4 + b.x) > 0;
-            if (blink && neonIntensity > 0.2) {
-              this.ctx.fillStyle = '#ff0055';
-              this.ctx.shadowColor = '#ff0055';
-              this.ctx.shadowBlur = 8 * neonIntensity;
-              this.ctx.beginPath();
-              this.ctx.arc(renderX + renderW / 2, renderY - b.antennaHeight * scale, 2.5, 0, Math.PI * 2);
-              this.ctx.fill();
-            }
-          }
-
-          // Windows (Glow intensifies as night falls!)
-          if (neonIntensity > 0.05 && b.windowGrid) {
-            const padX = 6;
-            const padY = 8;
-            const winW = 4;
-            const winH = 5;
-
-            b.windowGrid.forEach((row, rIdx) => {
-              row.forEach((win, cIdx) => {
-                if (win.lit) {
-                  const wx = renderX + padX + cIdx * (winW + 6);
-                  const wy = renderY + padY + rIdx * (winH + 8);
-
-                  if (wx + winW < renderX + renderW - 4 && wy + winH < GROUND_Y - 4) {
-                    this.ctx.fillStyle = win.color;
-                    this.ctx.globalAlpha = alpha * (0.2 + 0.8 * neonIntensity);
-                    if (neonIntensity > 0.6) {
-                      this.ctx.shadowColor = win.color;
-                      this.ctx.shadowBlur = 4 * neonIntensity;
-                    }
-                    this.ctx.fillRect(wx, wy, winW, winH);
-                  }
-                }
-              });
-            });
-            this.ctx.shadowBlur = 0;
-            this.ctx.globalAlpha = alpha;
-          }
-
-          // Holographic Billboard
-          if (b.hasBillboard && neonIntensity > 0.25) {
-            const bx = renderX + 6;
-            const by = renderY + 12;
-            const bw = renderW - 12;
-            const bh = 22;
-
-            if (bw > 24) {
-              this.ctx.strokeStyle = '#ff007f';
-              this.ctx.shadowColor = '#00f0ff';
-              this.ctx.shadowBlur = 10 * neonIntensity;
-              this.ctx.strokeRect(bx, by, bw, bh);
-
-              this.ctx.fillStyle = 'rgba(10, 0, 30, 0.7)';
-              this.ctx.fillRect(bx, by, bw, bh);
-
-              this.ctx.fillStyle = '#00f0ff';
-              this.ctx.font = 'bold 10px monospace';
-              this.ctx.textAlign = 'center';
-              this.ctx.fillText(b.billboardText, bx + bw / 2, by + 15);
-              this.ctx.shadowBlur = 0;
-            }
-          }
-        }
-
-        curX += b.width + 5;
-      });
+      startX += layer.width;
     }
 
     this.ctx.restore();
@@ -970,10 +1015,8 @@ class Game {
       this.ctx.shadowColor = car.color;
       this.ctx.shadowBlur = 8 * this.currentLighting.neonIntensity;
 
-      // Car body
       this.ctx.fillRect(car.x, car.y, car.length, 3);
 
-      // Light trail
       const trailGrad = this.ctx.createLinearGradient(
         car.x, car.y,
         car.speed > 0 ? car.x - 30 : car.x + car.length + 30, car.y
@@ -990,31 +1033,31 @@ class Game {
     const { neonIntensity } = this.currentLighting;
 
     // Ground block
-    const groundGrad = this.ctx.createLinearGradient(0, GROUND_Y, 0, V_HEIGHT);
+    const groundGrad = this.ctx.createLinearGradient(0, this.groundY, 0, this.vHeight);
     groundGrad.addColorStop(0, '#0d0a1a');
     groundGrad.addColorStop(1, '#05030a');
     this.ctx.fillStyle = groundGrad;
-    this.ctx.fillRect(0, GROUND_Y, V_WIDTH, V_HEIGHT - GROUND_Y);
+    this.ctx.fillRect(0, this.groundY, this.vWidth, this.vHeight - this.groundY);
 
-    // Glowing Cyberpunk Top Track Line
+    // Glowing Neon Top Track Line
     this.ctx.save();
     this.ctx.strokeStyle = '#00f0ff';
     this.ctx.lineWidth = 3;
     this.ctx.shadowColor = '#00f0ff';
     this.ctx.shadowBlur = 12 * Math.max(0.3, neonIntensity);
     this.ctx.beginPath();
-    this.ctx.moveTo(0, GROUND_Y);
-    this.ctx.lineTo(V_WIDTH, GROUND_Y);
+    this.ctx.moveTo(0, this.groundY);
+    this.ctx.lineTo(this.vWidth, this.groundY);
     this.ctx.stroke();
 
-    // Magenta secondary neon edge line
+    // Magenta secondary line
     this.ctx.strokeStyle = '#ff007f';
     this.ctx.lineWidth = 1.5;
     this.ctx.shadowColor = '#ff007f';
     this.ctx.shadowBlur = 8 * neonIntensity;
     this.ctx.beginPath();
-    this.ctx.moveTo(0, GROUND_Y + 6);
-    this.ctx.lineTo(V_WIDTH, GROUND_Y + 6);
+    this.ctx.moveTo(0, this.groundY + 6);
+    this.ctx.lineTo(this.vWidth, this.groundY + 6);
     this.ctx.stroke();
     this.ctx.restore();
 
@@ -1023,11 +1066,11 @@ class Game {
     this.ctx.strokeStyle = `rgba(0, 240, 255, ${0.15 + 0.3 * neonIntensity})`;
     this.ctx.lineWidth = 1.5;
 
-    for (let x = -60; x < V_WIDTH + 60; x += 40) {
+    for (let x = -60; x < this.vWidth + 60; x += 40) {
       const lineX = x - this.groundScrollX;
       this.ctx.beginPath();
-      this.ctx.moveTo(lineX, GROUND_Y);
-      this.ctx.lineTo(lineX - 35, V_HEIGHT);
+      this.ctx.moveTo(lineX, this.groundY);
+      this.ctx.lineTo(lineX - 35, this.vHeight);
       this.ctx.stroke();
     }
     this.ctx.restore();
@@ -1037,7 +1080,6 @@ class Game {
     const p = this.player;
     const { neonIntensity } = this.currentLighting;
 
-    // Invulnerability Flashing
     if (p.invulnerabilityTimer > 0) {
       const flash = Math.sin(p.invulnerabilityTimer * 25) > 0;
       if (!flash) return;
@@ -1046,7 +1088,7 @@ class Game {
     this.ctx.save();
     this.ctx.translate(p.x, p.y);
 
-    // Neon Motion Trail (Cyan/Magenta)
+    // Neon Motion Trail
     if (p.trail.length > 2) {
       this.ctx.save();
       for (let i = 0; i < p.trail.length; i++) {
@@ -1058,7 +1100,7 @@ class Game {
       this.ctx.restore();
     }
 
-    // 1. Cyberpunk Scarf / Trenchcoat Tails (Flapping in the wind)
+    // Scarf / Trenchcoat Tails
     this.ctx.fillStyle = '#ff007f';
     this.ctx.shadowColor = '#ff007f';
     this.ctx.shadowBlur = 6 * neonIntensity;
@@ -1071,7 +1113,7 @@ class Game {
     this.ctx.closePath();
     this.ctx.fill();
 
-    // 2. Legs & Running Animation Cycle
+    // Legs & Running Animation Cycle
     const legPhase = p.isGrounded ? this.player.runFrame : 2;
     const l1Offset = Math.sin(legPhase) * 12;
     const l2Offset = Math.sin(legPhase + Math.PI) * 12;
@@ -1079,40 +1121,36 @@ class Game {
     // Back leg
     this.ctx.fillStyle = '#1e1c2e';
     this.ctx.fillRect(10 + l2Offset, 36, 6, 20);
-    // Back neon cyber shoe
     this.ctx.fillStyle = '#00f0ff';
     this.ctx.fillRect(10 + l2Offset, 52, 10, 4);
 
     // Front leg
     this.ctx.fillStyle = '#2d2a45';
     this.ctx.fillRect(18 + l1Offset, 36, 6, 20);
-    // Front neon cyber shoe
     this.ctx.fillStyle = '#00f0ff';
     this.ctx.fillRect(18 + l1Offset, 52, 10, 4);
 
-    // 3. Torso / Cyber Jacket
+    // Torso / Cyber Jacket
     this.ctx.fillStyle = '#111022';
     this.ctx.fillRect(8, 16, 22, 22);
 
-    // Neon Accent Stripes on jacket
     this.ctx.fillStyle = '#ffe600';
     this.ctx.fillRect(14, 18, 3, 16);
 
-    // 4. Head & Helmet
+    // Head & Helmet
     this.ctx.fillStyle = '#1f1d36';
     this.ctx.fillRect(12, 2, 18, 14);
 
-    // 5. Glowing Neon Cyber Visor
+    // Glowing Neon Cyber Visor
     this.ctx.fillStyle = '#00f0ff';
     this.ctx.shadowColor = '#00f0ff';
     this.ctx.shadowBlur = 12;
     this.ctx.fillRect(20, 6, 12, 5);
 
-    // Visor glow trail
     this.ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
     this.ctx.fillRect(6, 7, 14, 3);
 
-    // 6. Cyber Jump Thruster Boot Glow
+    // Jump Thruster Boot Glow
     if (!p.isGrounded) {
       this.ctx.fillStyle = '#ff007f';
       this.ctx.shadowColor = '#ff007f';
@@ -1133,7 +1171,6 @@ class Game {
       this.ctx.save();
 
       if (obs.type === 'BARRIER') {
-        // Ground Triangular Cyber-Spike / Barrier
         this.ctx.translate(obs.x, obs.y);
 
         this.ctx.fillStyle = '#161226';
@@ -1144,50 +1181,41 @@ class Game {
         this.ctx.closePath();
         this.ctx.fill();
 
-        // Neon Yellow Hazard Edge
         this.ctx.strokeStyle = '#ffe600';
         this.ctx.lineWidth = 3;
         this.ctx.shadowColor = '#ffe600';
         this.ctx.shadowBlur = 10 * Math.max(0.4, neonIntensity);
         this.ctx.stroke();
 
-        // Warning core pulse
         this.ctx.fillStyle = '#ff0055';
         this.ctx.beginPath();
         this.ctx.arc(obs.width / 2, obs.height * 0.65, 4, 0, Math.PI * 2);
         this.ctx.fill();
 
       } else if (obs.type === 'LASER') {
-        // Tall Holographic Laser Gate
         this.ctx.translate(obs.x, obs.y);
 
-        // Base & Top Emitters
         this.ctx.fillStyle = '#222';
         this.ctx.fillRect(0, 0, obs.width, 8);
         this.ctx.fillRect(0, obs.height - 8, obs.width, 8);
 
-        // Glowing Laser Beam Core
         const pulse = 0.8 + 0.2 * Math.sin(obs.animTimer * 12);
         this.ctx.fillStyle = '#ff007f';
         this.ctx.shadowColor = '#ff007f';
         this.ctx.shadowBlur = 16 * pulse;
         this.ctx.fillRect(obs.width / 2 - 3, 8, 6, obs.height - 16);
 
-        // Center white core
         this.ctx.fillStyle = '#ffffff';
         this.ctx.fillRect(obs.width / 2 - 1, 8, 2, obs.height - 16);
 
       } else if (obs.type === 'DRONE') {
-        // Floating Cyber Drone
         this.ctx.translate(obs.x, obs.y);
 
-        // Drone Chassis
         this.ctx.fillStyle = '#1c1b29';
         this.ctx.beginPath();
         this.ctx.ellipse(obs.width / 2, obs.height / 2, obs.width / 2, obs.height / 2.5, 0, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Cyan Scanning Eye
         this.ctx.fillStyle = '#00f0ff';
         this.ctx.shadowColor = '#00f0ff';
         this.ctx.shadowBlur = 12;
@@ -1195,7 +1223,6 @@ class Game {
         this.ctx.arc(obs.width / 2, obs.height / 2, 5, 0, Math.PI * 2);
         this.ctx.fill();
 
-        // Twin Rotor Blades / Energy Rings
         this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
@@ -1252,22 +1279,20 @@ class Game {
   }
 
   renderVignetteAndScanlines() {
-    // Subtle CRT scanline overlay
     this.ctx.save();
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.05)';
-    for (let y = 0; y < V_HEIGHT; y += 4) {
-      this.ctx.fillRect(0, y, V_WIDTH, 1.5);
+    for (let y = 0; y < this.vHeight; y += 4) {
+      this.ctx.fillRect(0, y, this.vWidth, 1.5);
     }
 
-    // Vignette
     const vignette = this.ctx.createRadialGradient(
-      V_WIDTH / 2, V_HEIGHT / 2, V_WIDTH * 0.35,
-      V_WIDTH / 2, V_HEIGHT / 2, V_WIDTH * 0.65
+      this.vWidth / 2, this.vHeight / 2, this.vWidth * 0.35,
+      this.vWidth / 2, this.vHeight / 2, this.vWidth * 0.65
     );
     vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
     vignette.addColorStop(1, 'rgba(0, 0, 0, 0.45)');
     this.ctx.fillStyle = vignette;
-    this.ctx.fillRect(0, 0, V_WIDTH, V_HEIGHT);
+    this.ctx.fillRect(0, 0, this.vWidth, this.vHeight);
     this.ctx.restore();
   }
 }

@@ -4,7 +4,7 @@
 
 :root {
   --bg-dark: #07060e;
-  --bg-card: rgba(14, 12, 28, 0.85);
+  --bg-card: rgba(14, 12, 28, 0.9);
   --neon-cyan: #00f0ff;
   --neon-pink: #ff007f;
   --neon-yellow: #ffe600;
@@ -41,6 +41,7 @@ html, body {
   display: flex;
   flex-direction: column;
   background: radial-gradient(circle at 50% 30%, #15102a 0%, #07060e 100%);
+  overflow: hidden;
 }
 
 /* ==========================================================================
@@ -52,12 +53,12 @@ html, body {
   top: 0;
   left: 0;
   right: 0;
-  height: 60px;
+  height: 56px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 20px;
-  background: linear-gradient(180deg, rgba(7, 6, 14, 0.9) 0%, rgba(7, 6, 14, 0.4) 80%, transparent 100%);
+  padding: 0 16px;
+  background: linear-gradient(180deg, rgba(7, 6, 14, 0.92) 0%, rgba(7, 6, 14, 0.5) 80%, transparent 100%);
   z-index: 10;
   pointer-events: none;
 }
@@ -65,20 +66,20 @@ html, body {
 .hud-group {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   pointer-events: auto;
 }
 
 .hud-label {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: bold;
-  letter-spacing: 2px;
+  letter-spacing: 1.5px;
   color: var(--text-muted);
 }
 
 .lives-container {
   display: flex;
-  gap: 6px;
+  gap: 4px;
 }
 
 .life-icon {
@@ -88,6 +89,11 @@ html, body {
   transition: transform 0.2s ease, opacity 0.2s ease;
 }
 
+.life-icon svg {
+  width: 20px;
+  height: 20px;
+}
+
 .life-icon.active {
   color: var(--neon-pink);
   filter: drop-shadow(0 0 6px var(--neon-pink));
@@ -95,12 +101,12 @@ html, body {
 
 .life-icon.lost {
   color: #3b354d;
-  opacity: 0.4;
+  opacity: 0.35;
   transform: scale(0.85);
 }
 
 .hud-score-group {
-  gap: 24px;
+  gap: 16px;
 }
 
 .score-box {
@@ -110,7 +116,7 @@ html, body {
 }
 
 .hud-value {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 900;
   letter-spacing: 1px;
   color: #ffffff;
@@ -128,12 +134,12 @@ html, body {
 }
 
 .cyber-icon-btn {
-  background: rgba(18, 15, 36, 0.8);
+  background: rgba(18, 15, 36, 0.85);
   border: 1px solid rgba(0, 240, 255, 0.4);
   color: var(--neon-cyan);
   border-radius: 4px;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -142,8 +148,8 @@ html, body {
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.15);
 }
 
-.cyber-icon-btn:hover {
-  background: rgba(0, 240, 255, 0.2);
+.cyber-icon-btn:hover, .cyber-icon-btn:active {
+  background: rgba(0, 240, 255, 0.25);
   box-shadow: 0 0 15px var(--neon-cyan);
   transform: scale(1.05);
 }
@@ -168,6 +174,8 @@ html, body {
   image-rendering: -webkit-optimize-contrast;
   image-rendering: crisp-edges;
   box-shadow: 0 0 40px rgba(0, 240, 255, 0.15), 0 0 80px rgba(255, 0, 127, 0.1);
+  max-width: 100%;
+  max-height: 100%;
 }
 
 /* ==========================================================================
@@ -183,13 +191,14 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(5, 4, 12, 0.75);
+  background: rgba(5, 4, 12, 0.78);
   backdrop-filter: blur(6px);
   -webkit-backdrop-filter: blur(6px);
   z-index: 20;
   opacity: 1;
   visibility: visible;
-  transition: opacity 0.3s ease, visibility 0.3s ease;
+  padding: 16px;
+  transition: opacity 0.25s ease, visibility 0.25s ease;
 }
 
 .overlay-screen.hidden {
@@ -199,18 +208,20 @@ html, body {
 }
 
 .overlay-card {
-  width: 90%;
-  max-width: 460px;
+  width: 100%;
+  max-width: 440px;
+  max-height: 90vh;
+  overflow-y: auto;
   background: var(--bg-card);
   border: 1px solid rgba(0, 240, 255, 0.5);
   box-shadow: 0 0 30px rgba(0, 240, 255, 0.2), inset 0 0 20px rgba(0, 240, 255, 0.05);
-  padding: 30px;
+  padding: 26px 20px;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
   position: relative;
-  clip-path: polygon(0 16px, 16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px));
+  clip-path: polygon(0 14px, 14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px));
 }
 
 .overlay-card::before {
@@ -231,7 +242,7 @@ html, body {
   background: rgba(0, 240, 255, 0.1);
   border: 1px solid var(--neon-cyan);
   padding: 4px 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
   border-radius: 2px;
 }
 
@@ -242,18 +253,18 @@ html, body {
 }
 
 .game-title {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 900;
-  letter-spacing: 4px;
+  letter-spacing: 3px;
   color: #ffffff;
   text-shadow: 0 0 15px var(--neon-cyan), 0 0 30px rgba(0, 240, 255, 0.4);
   margin-bottom: 4px;
 }
 
 .gameover-title {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 900;
-  letter-spacing: 4px;
+  letter-spacing: 3px;
   color: var(--neon-red);
   text-shadow: 0 0 15px var(--neon-red), 0 0 30px rgba(255, 42, 85, 0.4);
   margin-bottom: 8px;
@@ -261,34 +272,35 @@ html, body {
 
 .game-subtitle {
   font-size: 11px;
-  letter-spacing: 3px;
+  letter-spacing: 2px;
   color: var(--neon-pink);
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .instructions-box {
   width: 100%;
-  background: rgba(10, 8, 22, 0.8);
+  background: rgba(10, 8, 22, 0.85);
   border: 1px solid rgba(136, 144, 173, 0.2);
-  padding: 16px;
-  margin-bottom: 24px;
+  padding: 14px;
+  margin-bottom: 20px;
   border-radius: 4px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 
 .instruction-row {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  font-size: 13px;
+  gap: 6px;
+  font-size: 12px;
   color: var(--text-main);
+  flex-wrap: wrap;
 }
 
 .sub-instruction {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -296,8 +308,8 @@ html, body {
   background: #1c1833;
   border: 1px solid var(--neon-cyan);
   color: var(--neon-cyan);
-  padding: 4px 8px;
-  font-size: 11px;
+  padding: 3px 7px;
+  font-size: 10px;
   font-weight: bold;
   border-radius: 3px;
   box-shadow: 0 0 6px rgba(0, 240, 255, 0.3);
@@ -317,9 +329,9 @@ html, body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 12px 28px;
+  padding: 12px 26px;
   font-family: var(--font-cyber);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 800;
   letter-spacing: 2px;
   text-transform: uppercase;
@@ -327,6 +339,7 @@ html, body {
   border: none;
   transition: all 0.2s ease;
   clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  touch-action: manipulation;
 }
 
 .cyber-btn-primary {
@@ -335,7 +348,7 @@ html, body {
   box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
 }
 
-.cyber-btn-primary:hover {
+.cyber-btn-primary:hover, .cyber-btn-primary:active {
   background: #ffffff;
   box-shadow: 0 0 30px var(--neon-cyan), 0 0 10px #ffffff;
   transform: translateY(-2px);
@@ -345,53 +358,53 @@ html, body {
   background: var(--neon-pink);
   color: #ffffff;
   box-shadow: 0 0 15px rgba(255, 0, 127, 0.4);
-  padding: 10px 18px;
-  font-size: 12px;
+  padding: 10px 16px;
+  font-size: 11px;
 }
 
-.cyber-btn-secondary:hover {
+.cyber-btn-secondary:hover, .cyber-btn-secondary:active {
   background: #ff3399;
   box-shadow: 0 0 25px var(--neon-pink);
 }
 
 .gameover-stats {
-  margin-bottom: 18px;
+  margin-bottom: 16px;
 }
 
 .stat-box {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
 }
 
 .stat-label {
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 2px;
   color: var(--text-muted);
 }
 
 .stat-value {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 900;
 }
 
 .highscore-entry-form {
   width: 100%;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .form-label {
   display: block;
-  font-size: 11px;
+  font-size: 10px;
   letter-spacing: 1px;
   color: var(--text-muted);
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   text-align: left;
 }
 
 .input-row {
   display: flex;
-  gap: 8px;
+  gap: 6px;
 }
 
 .input-row input {
@@ -400,9 +413,9 @@ html, body {
   border: 1px solid rgba(0, 240, 255, 0.4);
   color: var(--neon-cyan);
   font-family: var(--font-cyber);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: bold;
-  padding: 10px 14px;
+  padding: 9px 12px;
   border-radius: 2px;
   outline: none;
   transition: border-color 0.2s, box-shadow 0.2s;
@@ -415,14 +428,14 @@ html, body {
 
 .leaderboard-section {
   width: 100%;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
 }
 
 .leaderboard-title {
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 2px;
   color: var(--neon-pink);
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   text-align: left;
 }
 
@@ -431,16 +444,16 @@ html, body {
   background: rgba(8, 7, 16, 0.7);
   border: 1px solid rgba(136, 144, 173, 0.15);
   border-radius: 4px;
-  padding: 6px 0;
-  max-height: 140px;
+  padding: 4px 0;
+  max-height: 120px;
   overflow-y: auto;
 }
 
 .highscore-item {
   display: flex;
   justify-content: space-between;
-  padding: 6px 14px;
-  font-size: 12px;
+  padding: 5px 12px;
+  font-size: 11px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 
@@ -451,7 +464,7 @@ html, body {
 .highscore-item .rank {
   color: var(--neon-yellow);
   font-weight: bold;
-  width: 28px;
+  width: 24px;
   text-align: left;
 }
 
@@ -468,22 +481,22 @@ html, body {
 }
 
 /* ==========================================================================
-   Mobile Touch Controls
+   Mobile Touch Controls & Responsive Breakpoints
    ========================================================================== */
 
 #mobile-controls {
   position: absolute;
-  bottom: 24px;
-  right: 24px;
+  bottom: 20px;
+  right: 20px;
   z-index: 15;
   display: none;
 }
 
 .mobile-touch-btn {
-  width: 72px;
-  height: 72px;
+  width: 76px;
+  height: 76px;
   border-radius: 50%;
-  background: rgba(0, 240, 255, 0.2);
+  background: rgba(0, 240, 255, 0.25);
   border: 2px solid var(--neon-cyan);
   color: var(--neon-cyan);
   display: flex;
@@ -495,18 +508,74 @@ html, body {
   font-size: 11px;
   font-weight: 900;
   cursor: pointer;
-  box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.35);
   touch-action: manipulation;
   transition: transform 0.1s, background-color 0.1s;
 }
 
 .mobile-touch-btn:active {
-  background: rgba(0, 240, 255, 0.5);
+  background: rgba(0, 240, 255, 0.6);
   transform: scale(0.92);
 }
 
+/* Responsive adjustments for Mobile & Portrait */
 @media (pointer: coarse), (max-width: 768px) {
   #mobile-controls {
     display: block;
+  }
+}
+
+@media (max-width: 480px) {
+  #game-hud {
+    padding: 0 10px;
+    height: 50px;
+  }
+
+  .hud-group {
+    gap: 6px;
+  }
+
+  .hud-score-group {
+    gap: 10px;
+  }
+
+  .hud-label {
+    font-size: 8px;
+    letter-spacing: 1px;
+  }
+
+  .hud-value {
+    font-size: 15px;
+  }
+
+  .life-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .cyber-icon-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .game-title {
+    font-size: 24px;
+    letter-spacing: 2px;
+  }
+
+  .gameover-title {
+    font-size: 24px;
+    letter-spacing: 2px;
+  }
+
+  .overlay-card {
+    padding: 20px 14px;
+  }
+
+  .mobile-touch-btn {
+    width: 68px;
+    height: 68px;
+    bottom: 16px;
+    right: 16px;
   }
 }
