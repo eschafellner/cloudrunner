@@ -10,6 +10,9 @@ Ein schnelles, butterweich animiertes Jump-and-Run-Browser-Spiel im Cyberpunk-St
 - **Steuerung Desktop:**
   - `Leertaste`, `Pfeiltaste Oben` (▲) oder `W`: **Springen**
   - Erneutes Drücken in der Luft: **Doppelsprung**
+- **Startmenü & Highscores:**
+  - Über den Button **„🏆 RANGLISTE“** im Startmenü kann die Bestenliste jederzeit eingesehen werden.
+  - Nach einem Game Over kann der Name genau **einmal** eingetragen werden, woraufhin das Spiel nach Bestätigung automatisch zum Startmenü zurückkehrt.
 - **Steuerung Mobile / Touch (Quer- & Hochformat):**
   - **Tap irgendwo auf den Bildschirm** oder den sichtbaren **Touch-Button (JUMP)** unten rechts.
   - Vollwertige **Hochformat-Unterstützung (Portrait Mode)** auf Smartphones und Tablets sowie klassisches 16:9 Querformat auf Desktops.

@@ -350,6 +350,15 @@ html, body {
    Buttons & Inputs
    ========================================================================== */
 
+.start-btn-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
+
 .cyber-btn {
   position: relative;
   display: inline-flex;
@@ -368,13 +377,20 @@ html, body {
   touch-action: manipulation;
 }
 
+.cyber-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
 .cyber-btn-primary {
   background: var(--neon-cyan);
   color: #05040a;
   box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
 }
 
-.cyber-btn-primary:hover, .cyber-btn-primary:active {
+.cyber-btn-primary:hover:not(:disabled), .cyber-btn-primary:active:not(:disabled) {
   background: #ffffff;
   box-shadow: 0 0 30px var(--neon-cyan), 0 0 10px #ffffff;
   transform: translateY(-2px);
@@ -388,7 +404,7 @@ html, body {
   font-size: 11px;
 }
 
-.cyber-btn-secondary:hover, .cyber-btn-secondary:active {
+.cyber-btn-secondary:hover:not(:disabled), .cyber-btn-secondary:active:not(:disabled) {
   background: #ff3399;
   box-shadow: 0 0 25px var(--neon-pink);
 }

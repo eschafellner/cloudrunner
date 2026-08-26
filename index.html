@@ -76,8 +76,32 @@
             </div>
           </div>
 
-          <button id="start-btn" class="cyber-btn cyber-btn-primary">
-            <span class="btn-glitch-text">SPIEL STARTEN</span>
+          <div class="start-btn-group">
+            <button id="start-btn" class="cyber-btn cyber-btn-primary">
+              <span class="btn-glitch-text">SPIEL STARTEN</span>
+            </button>
+            <button id="show-highscores-btn" class="cyber-btn cyber-btn-secondary">
+              <span>🏆 RANGLISTE</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Highscore Screen Overlay (from Start Menu) -->
+      <div id="highscore-overlay" class="overlay-screen hidden">
+        <div class="overlay-card">
+          <div class="cyber-badge">DATABASE // RECORDS</div>
+          <h2 class="game-title">RANGLISTE</h2>
+          <p class="game-subtitle">TOP CYBER RUNNERS</p>
+
+          <div class="leaderboard-section">
+            <ul id="start-highscore-list" class="highscore-list">
+              <!-- Dynamically populated via JS -->
+            </ul>
+          </div>
+
+          <button id="close-highscores-btn" class="cyber-btn cyber-btn-primary">
+            <span>ZURÜCK</span>
           </button>
         </div>
       </div>

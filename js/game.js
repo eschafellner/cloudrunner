@@ -35,12 +35,16 @@ class Game {
     this.uiMuteBtn = document.getElementById('mute-btn');
     this.startOverlay = document.getElementById('start-overlay');
     this.gameOverOverlay = document.getElementById('gameover-overlay');
+    this.highscoreOverlay = document.getElementById('highscore-overlay');
     this.startBtn = document.getElementById('start-btn');
+    this.showHighscoresBtn = document.getElementById('show-highscores-btn');
+    this.closeHighscoresBtn = document.getElementById('close-highscores-btn');
     this.restartBtn = document.getElementById('restart-btn');
     this.saveScoreBtn = document.getElementById('save-score-btn');
     this.playerNameInput = document.getElementById('player-name-input');
     this.finalScoreEl = document.getElementById('final-score');
     this.highscoreListEl = document.getElementById('highscore-list');
+    this.startHighscoreListEl = document.getElementById('start-highscore-list');
     this.mobileJumpBtn = document.getElementById('mobile-jump-btn');
 
     // Responsive virtual resolution
@@ -52,6 +56,7 @@ class Game {
 
     // Game state
     this.state = 'START'; // 'START' | 'PLAYING' | 'GAMEOVER'
+    this.scoreSaved = false;
     this.gameTime = 0;
     this.currentSpeed = GAME_CONFIG.BASE_SPEED;
     this.score = 0;
@@ -442,6 +447,20 @@ class Game {
       });
     }
 
+    if (this.showHighscoresBtn) {
+      this.showHighscoresBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.showHighscoresModal();
+      });
+    }
+
+    if (this.closeHighscoresBtn) {
+      this.closeHighscoresBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.hideHighscoresModal();
+      });
+    }
+
     if (this.restartBtn) {
       this.restartBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -556,6 +575,7 @@ class Game {
 
   gameOver() {
     this.state = 'GAMEOVER';
+    this.scoreSaved = false;
     soundEngine.stopMusic();
     soundEngine.playGameOver();
 
@@ -566,8 +586,19 @@ class Game {
       this.finalScoreEl.textContent = this.score;
     }
 
+    if (this.playerNameInput) {
+      this.playerNameInput.disabled = false;
+      this.playerNameInput.value = '';
+    }
+    if (this.saveScoreBtn) {
+      this.saveScoreBtn.disabled = false;
+      this.saveScoreBtn.textContent = 'SPEICHERN';
+    }
+
     this.renderHighscoreList();
-    this.gameOverOverlay.classList.remove('hidden');
+    if (this.startOverlay) this.startOverlay.classList.add('hidden');
+    if (this.highscoreOverlay) this.highscoreOverlay.classList.add('hidden');
+    if (this.gameOverOverlay) this.gameOverOverlay.classList.remove('hidden');
 
     setTimeout(() => {
       if (this.playerNameInput) {
@@ -575,6 +606,25 @@ class Game {
         this.playerNameInput.select();
       }
     }, 100);
+  }
+
+  showHighscoresModal() {
+    this.renderStartHighscores();
+    if (this.startOverlay) this.startOverlay.classList.add('hidden');
+    if (this.gameOverOverlay) this.gameOverOverlay.classList.add('hidden');
+    if (this.highscoreOverlay) this.highscoreOverlay.classList.remove('hidden');
+  }
+
+  hideHighscoresModal() {
+    if (this.highscoreOverlay) this.highscoreOverlay.classList.add('hidden');
+    if (this.startOverlay) this.startOverlay.classList.remove('hidden');
+  }
+
+  showStartScreen() {
+    this.state = 'START';
+    if (this.gameOverOverlay) this.gameOverOverlay.classList.add('hidden');
+    if (this.highscoreOverlay) this.highscoreOverlay.classList.add('hidden');
+    if (this.startOverlay) this.startOverlay.classList.remove('hidden');
   }
 
   /* ------------------- HIGHSCORES ------------------- */
@@ -594,6 +644,9 @@ class Game {
   }
 
   saveCurrentScore() {
+    if (this.scoreSaved) return;
+    this.scoreSaved = true;
+
     const rawName = this.playerNameInput ? this.playerNameInput.value : 'RUNNER';
     const validName = validatePlayerName(rawName);
 
@@ -610,16 +663,19 @@ class Game {
     this.renderHighscoreList();
     this.updateHUD();
 
+    if (this.playerNameInput) {
+      this.playerNameInput.disabled = true;
+    }
+
     if (this.saveScoreBtn) {
       this.saveScoreBtn.textContent = 'GESPEICHERT!';
       this.saveScoreBtn.disabled = true;
-      setTimeout(() => {
-        if (this.saveScoreBtn) {
-          this.saveScoreBtn.textContent = 'SPEICHERN';
-          this.saveScoreBtn.disabled = false;
-        }
-      }, 2000);
     }
+
+    // Return to start screen after brief confirmation
+    setTimeout(() => {
+      this.showStartScreen();
+    }, 1200);
   }
 
   renderHighscoreList() {
@@ -635,6 +691,22 @@ class Game {
         <span class="score">${entry.score} PTS</span>
       `;
       this.highscoreListEl.appendChild(li);
+    });
+  }
+
+  renderStartHighscores() {
+    if (!this.startHighscoreListEl) return;
+    this.startHighscoreListEl.innerHTML = '';
+
+    this.highScores.slice(0, 5).forEach((entry, idx) => {
+      const li = document.createElement('li');
+      li.className = 'highscore-item';
+      li.innerHTML = `
+        <span class="rank">#${idx + 1}</span>
+        <span class="name">${entry.name}</span>
+        <span class="score">${entry.score} PTS</span>
+      `;
+      this.startHighscoreListEl.appendChild(li);
     });
   }
 
@@ -1588,24 +1660,55 @@ class Game {
       } else if (obs.type === 'DRONE') {
         this.ctx.translate(obs.x, obs.y);
 
+        const darknessGlow = Math.max(0.4, neonIntensity);
+        const pulse = 0.8 + 0.3 * Math.sin(obs.animTimer * 8);
+
+        // 1. Outer Neon Aura / Energy Shield (Intensifies at night)
         this.ctx.fillStyle = '#1c1b29';
+        this.ctx.shadowColor = '#00f0ff';
+        this.ctx.shadowBlur = 10 + 16 * darknessGlow;
         this.ctx.beginPath();
         this.ctx.ellipse(obs.width / 2, obs.height / 2, obs.width / 2, obs.height / 2.5, 0, 0, Math.PI * 2);
         this.ctx.fill();
 
-        this.ctx.fillStyle = '#00f0ff';
+        // 2. Luminous Neon Hull Outline (Ensures high visibility in dark)
+        this.ctx.strokeStyle = `rgba(0, 240, 255, ${0.7 + 0.3 * darknessGlow})`;
+        this.ctx.lineWidth = 1.5 + 1.2 * darknessGlow;
         this.ctx.shadowColor = '#00f0ff';
-        this.ctx.shadowBlur = 12;
+        this.ctx.shadowBlur = 8 * darknessGlow;
+        this.ctx.stroke();
+
+        // 3. Pulsing Luminous Cyan Eye
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.shadowColor = '#00f0ff';
+        this.ctx.shadowBlur = 14 * pulse;
         this.ctx.beginPath();
-        this.ctx.arc(obs.width / 2, obs.height / 2, 5, 0, Math.PI * 2);
+        this.ctx.arc(obs.width / 2, obs.height / 2, 4.5 * pulse, 0, Math.PI * 2);
         this.ctx.fill();
 
-        this.ctx.strokeStyle = 'rgba(0, 240, 255, 0.6)';
+        // Eye core dot
+        this.ctx.fillStyle = '#00f0ff';
+        this.ctx.beginPath();
+        this.ctx.arc(obs.width / 2, obs.height / 2, 2, 0, Math.PI * 2);
+        this.ctx.fill();
+
+        // 4. Glowing Neon Rotor / Wing Emitters (Pink/Magenta)
+        this.ctx.strokeStyle = '#ff007f';
+        this.ctx.shadowColor = '#ff007f';
+        this.ctx.shadowBlur = 8 + 10 * darknessGlow;
         this.ctx.lineWidth = 2;
         this.ctx.beginPath();
         this.ctx.ellipse(4, 4, 8, 3, 0, 0, Math.PI * 2);
         this.ctx.ellipse(obs.width - 4, 4, 8, 3, 0, 0, Math.PI * 2);
         this.ctx.stroke();
+
+        // 5. Thruster Exhaust / Navigation Beacon Dots
+        const beaconBlink = Math.sin(obs.animTimer * 10) > 0;
+        this.ctx.fillStyle = beaconBlink ? '#ffe600' : '#ff0055';
+        this.ctx.shadowColor = beaconBlink ? '#ffe600' : '#ff0055';
+        this.ctx.shadowBlur = 6 * darknessGlow;
+        this.ctx.fillRect(8, obs.height - 2, 3, 2);
+        this.ctx.fillRect(obs.width - 11, obs.height - 2, 3, 2);
       }
 
       this.ctx.restore();
