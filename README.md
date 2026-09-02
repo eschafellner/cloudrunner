@@ -8,33 +8,37 @@ Ein schnelles, butterweich animiertes Jump-and-Run-Browser-Spiel im Cyberpunk-St
 
 - **Automatische Bewegung:** Die Spielfigur sprintet automatisch über einen Neon-Highway durch eine futuristische Megacity.
 - **Steuerung Desktop:**
-  - `Leertaste`, `Pfeiltaste Oben` (▲) oder `W`: **Springen**
-  - Erneutes Drücken in der Luft: **Doppelsprung**
+  - `Leertaste`, `Pfeiltaste Oben` (▲) oder `W`: **Springen & Doppelsprung**
+  - `Pfeiltaste Unten` (▼) oder `S`: **Cyber-Slide** (flach unter Barrieren durchrutschen)
+- **Steuerung Mobile / Touch (Quer- & Hochformat):**
+  - **Tap / Swipe-Up** oder **JUMP-Button**: Springen & Doppelsprung
+  - **Swipe-Down** oder **SLIDE-Button**: Sliden mit Funken-Partikeln
+  - Vollwertige **Hochformat-Unterstützung (Portrait Mode)** auf Smartphones und Tablets sowie 16:9 Querformat.
+  - Zoom & Scrollen auf Mobilgeräten sind via `touch-action: manipulation` unterbunden.
+- **Power-Ups (Cyber-Kapseln):**
+  - 🛡️ **Neon-Schild**: Schützt vor genau 1 Treffer, ohne Leben abzuziehen.
+  - 🧲 **Disc-Magnet (8s)**: Zieht Discs in der Umgebung magnetisch zum Runner an.
+  - ⚡ **Overdrive-Dash (4.5s)**: Hyper-Speed, Unverwundbarkeit, Zerstörung gerammter Hindernisse und doppelter Score.
+- **Air-Combos:**
+  - Sammle Discs in der Luft ohne Bodenberührung für aufsteigende Multiplikatoren ($1.5\times$ bis $3.0\times$) und Bonus-Punkte bei der Landung.
 - **Startmenü & Highscores:**
   - Über den Button **„🏆 RANGLISTE“** im Startmenü kann die Bestenliste jederzeit eingesehen werden.
   - Nach einem Game Over kann der Name genau **einmal** eingetragen werden, woraufhin das Spiel nach Bestätigung automatisch zum Startmenü zurückkehrt.
-- **Steuerung Mobile / Touch (Quer- & Hochformat):**
-  - **Tap irgendwo auf den Bildschirm** oder den sichtbaren **Touch-Button (JUMP)** unten rechts.
-  - Vollwertige **Hochformat-Unterstützung (Portrait Mode)** auf Smartphones und Tablets sowie klassisches 16:9 Querformat auf Desktops.
-  - Zoom & Scrollen auf Mobilgeräten sind via `touch-action: manipulation` unterbunden.
 - **Leben-System:**
   - Startet mit **3 Leben**, erweiterbar auf maximal **5 Leben** durch das Sammeln von Discs.
-  - Bei Kollision oder Sturz in einen Abgrund: 1 Leben Abzug, Screen-Shake, roter Flash, Soundeffekt und 1,8s Unverwundbarkeit.
+  - Bei Treffer/Absturz: 1 Leben Abzug, Screen-Shake, roter Flash, Soundeffekt und 1,8s Unverwundbarkeit (sofern kein Schild aktiv ist).
 - **Sammelobjekt „Discs“:**
   - Holographisch funkelnde CDs, einzeln oder in Formationen von 2–5 Stück (Reihen, Spalten, Sprungbögen).
   - Jede Disc bringt Punkte; **20 Discs = +1 Extraleben** (bis max. 5 Leben). Der Zähler wird bei 20 und bei jedem Spielneustart auf 0 zurückgesetzt.
   - HUD-Anzeige: `DISCS: 0/20`.
-- **Erhöhte Plattformen:**
-  - Schwebende Cyber-Plattformen, auf die der Spieler von oben landen, laufen und abspringen kann.
-  - Höhen und Distanzen sind exakt aus den Sprungparametern abgeleitet und bei jedem Tempo erreichbar.
-- **Abgründe (Chasms):**
-  - Lücken im Highway mit Laser-/Warnmarkierungen.
-  - Breiten sind physikbasiert so begrenzt, dass sie stets fair überspringbar oder über Plattformen passierbar sind.
-  - Ein Hineinfallen kostet 1 Leben und setzt den Spieler sicher auf die Fahrbahn zurück.
+- **Erhöhte Plattformen & Abgründe (Chasms):**
+  - Schwebende Cyber-Plattformen und bodenlose Lücken mit Laser-Warnlinien.
+  - Breiten und Höhen sind physikbasiert stets fair erreich- und überspringbar.
 - **Hindernisse:**
   1. *Cyber-Barrieren (Boden)*: Dreieckige Gefahrenhindernisse auf der Fahrbahn.
-  2. *Laser-Gates (Hoch)*: Holographische, vertikal pulsierende Laserbarrieren.
-  3. *Cyber-Drohnen (Fliegend)*: Schwebende Überwachungsdrohnen mit Wellenbewegung.
+  2. *Laser-Gates (Boden)*: Vertikale Laser-Säulen zum Überspringen.
+  3. *High-Laser-Gates (Hängend)*: Schwebende Laser-Emitter, unter denen hindurch gerutscht werden muss.
+  4. *Cyber-Drohnen (Fliegend)*: Schwebende Überwachungsdrohnen mit Wellenbewegung und Nacht-Glow.
 
 ---
 
@@ -93,7 +97,7 @@ npm test
 node --test
 ```
 
-Alle 46 Testfälle laufen in wenigen Millisekunden durch.
+Alle 57 Testfälle laufen in wenigen Millisekunden durch.
 
 ---
 

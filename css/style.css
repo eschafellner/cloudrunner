@@ -174,10 +174,105 @@ html, body {
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.15);
 }
 
-.cyber-icon-btn:hover, .cyber-icon-btn:active {
-  background: rgba(0, 240, 255, 0.25);
-  box-shadow: 0 0 15px var(--neon-cyan);
-  transform: scale(1.05);
+/* ==========================================================================
+   HUD Status Bar (Power-Ups & Combos)
+   ========================================================================== */
+
+#hud-status-bar {
+  position: absolute;
+  top: 58px;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.powerups-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.powerup-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(14, 12, 28, 0.85);
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+  font-size: 11px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  animation: powerup-enter 0.25s ease-out;
+}
+
+.powerup-badge.badge-shield {
+  border-color: var(--neon-cyan);
+  color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.4);
+}
+
+.powerup-badge.badge-magnet {
+  border-color: var(--neon-yellow);
+  color: var(--neon-yellow);
+  box-shadow: 0 0 10px rgba(255, 230, 0, 0.4);
+}
+
+.powerup-badge.badge-overdrive {
+  border-color: var(--neon-pink);
+  color: var(--neon-pink);
+  box-shadow: 0 0 12px rgba(255, 0, 127, 0.5);
+  animation: pulse-overdrive 1s infinite alternate;
+}
+
+@keyframes powerup-enter {
+  from { opacity: 0; transform: translateX(-15px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulse-overdrive {
+  0% { box-shadow: 0 0 8px rgba(255, 0, 127, 0.4); }
+  100% { box-shadow: 0 0 18px rgba(255, 0, 127, 0.8); }
+}
+
+.hud-combo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  background: rgba(14, 12, 28, 0.85);
+  padding: 4px 10px;
+  border-radius: 4px;
+  border: 1px solid var(--neon-pink);
+  box-shadow: 0 0 12px rgba(255, 0, 127, 0.4);
+  animation: combo-pulse 0.6s infinite alternate ease-in-out;
+}
+
+.hud-combo.hidden {
+  display: none;
+}
+
+.combo-label {
+  font-size: 9px;
+  font-weight: bold;
+  color: var(--neon-cyan);
+  letter-spacing: 1.5px;
+}
+
+.combo-val {
+  font-size: 16px;
+  font-weight: 900;
+  color: var(--neon-pink);
+  text-shadow: 0 0 8px var(--neon-pink);
+}
+
+@keyframes combo-pulse {
+  0% { transform: scale(1); }
+  100% { transform: scale(1.06); }
 }
 
 /* ==========================================================================
@@ -532,11 +627,12 @@ html, body {
   right: 20px;
   z-index: 15;
   display: none;
+  gap: 12px;
 }
 
 .mobile-touch-btn {
-  width: 76px;
-  height: 76px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   background: rgba(0, 240, 255, 0.25);
   border: 2px solid var(--neon-cyan);
@@ -560,10 +656,22 @@ html, body {
   transform: scale(0.92);
 }
 
+.mobile-touch-btn.btn-slide {
+  background: rgba(255, 0, 127, 0.25);
+  border-color: var(--neon-pink);
+  color: var(--neon-pink);
+  box-shadow: 0 0 20px rgba(255, 0, 127, 0.35);
+}
+
+.mobile-touch-btn.btn-slide:active {
+  background: rgba(255, 0, 127, 0.6);
+}
+
 /* Responsive adjustments for Mobile & Portrait */
 @media (pointer: coarse), (max-width: 768px) {
   #mobile-controls {
-    display: block;
+    display: flex;
+    align-items: center;
   }
 }
 

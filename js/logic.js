@@ -30,6 +30,31 @@ export const GAME_CONFIG = {
 
   MAX_PLATFORM_HEIGHT: 95,    // Max platform elevation above ground (px)
   MIN_PLATFORM_HEIGHT: 45,    // Min platform elevation above ground (px)
+
+  // Slide mechanics
+  NORMAL_PLAYER_HEIGHT: 56,   // Normal standing player height
+  SLIDE_PLAYER_HEIGHT: 28,    // Low profile slide height (50% reduction)
+  SLIDE_DURATION: 0.65,       // Max slide duration in seconds
+
+  // Power-Ups
+  POWERUP_TYPES: {
+    SHIELD: 'SHIELD',
+    MAGNET: 'MAGNET',
+    OVERDRIVE: 'OVERDRIVE',
+  },
+  POWERUP_DURATIONS: {
+    SHIELD: Infinity,         // Lasts until hit
+    MAGNET: 8.0,              // 8.0 seconds
+    OVERDRIVE: 4.5,           // 4.5 seconds
+  },
+  MAGNET_RADIUS: 220,         // Attraction radius in pixels
+  MAGNET_PULL_SPEED: 520,     // Speed at which magnet pulls discs (px/s)
+  OVERDRIVE_SPEED_BOOST: 140, // Bonus scrolling speed during overdrive
+  OVERDRIVE_SCORE_MULTIPLIER: 2, // Score multiplier during overdrive
+
+  // Air Combo
+  AIR_COMBO_MIN_DISCS: 2,     // Minimum airborne discs to trigger combo
+  MAX_AIR_COMBO_MULTIPLIER: 3.0,
 };
 
 /**
@@ -518,12 +543,19 @@ export function updatePlayerPhysics(player, dt, groundY, platforms = [], chasms 
 
 /**
  * Triggers a jump or double jump if player has jumps remaining.
+ * Automatically cancels an active slide when jumping.
  *
  * @param {Object} player - Player state object
  * @param {Object} [config] - Physics overrides
  * @returns {string|null} "JUMP", "DOUBLE_JUMP", or null if jump failed
  */
 export function triggerPlayerJump(player, config = {}) {
+  if (!player) return null;
+
+  if (player.isSliding) {
+    cancelPlayerSlide(player, config);
+  }
+
   const jumpForce = config.jumpForce ?? GAME_CONFIG.JUMP_FORCE;
   const doubleJumpForce = config.doubleJumpForce ?? GAME_CONFIG.DOUBLE_JUMP_FORCE;
 
@@ -542,3 +574,198 @@ export function triggerPlayerJump(player, config = {}) {
   }
   return null;
 }
+
+/**
+ * Initiates a slide if player is grounded and not currently sliding.
+ * Reduces player hitbox height and adjusts Y position to keep feet on ground.
+ *
+ * @param {Object} player - Player state object
+ * @param {Object} [config] - Optional overrides
+ * @returns {boolean} True if slide was successfully initiated
+ */
+export function triggerPlayerSlide(player, config = {}) {
+  if (!player || !player.isGrounded || player.isSliding) return false;
+
+  const normalHeight = config.normalHeight ?? GAME_CONFIG.NORMAL_PLAYER_HEIGHT;
+  const slideHeight = config.slideHeight ?? GAME_CONFIG.SLIDE_PLAYER_HEIGHT;
+  const slideDuration = config.slideDuration ?? GAME_CONFIG.SLIDE_DURATION;
+
+  player.isSliding = true;
+  player.slideTimer = slideDuration;
+  player.height = slideHeight;
+  player.y += (normalHeight - slideHeight);
+
+  return true;
+}
+
+/**
+ * Cancels an active slide, restoring player to normal standing height.
+ *
+ * @param {Object} player - Player state object
+ * @param {Object} [config] - Optional overrides
+ * @returns {boolean} True if slide was cancelled
+ */
+export function cancelPlayerSlide(player, config = {}) {
+  if (!player || !player.isSliding) return false;
+
+  const normalHeight = config.normalHeight ?? GAME_CONFIG.NORMAL_PLAYER_HEIGHT;
+  const slideHeight = config.slideHeight ?? GAME_CONFIG.SLIDE_PLAYER_HEIGHT;
+
+  player.isSliding = false;
+  player.slideTimer = 0;
+  player.y -= (normalHeight - slideHeight);
+  player.height = normalHeight;
+
+  return true;
+}
+
+/**
+ * Updates player slide timer and automatically restores standing height when time expires.
+ *
+ * @param {Object} player - Player state object
+ * @param {number} dt - Delta time in seconds
+ * @param {Object} [config] - Optional overrides
+ * @returns {Object} Updated player object
+ */
+export function updatePlayerSlide(player, dt, config = {}) {
+  if (!player || !player.isSliding) return player;
+
+  player.slideTimer = Math.max(0, player.slideTimer - dt);
+  if (player.slideTimer <= 0) {
+    cancelPlayerSlide(player, config);
+  }
+
+  return player;
+}
+
+/**
+ * Creates an empty active power-ups state object.
+ *
+ * @returns {Object} { shield: boolean, magnetTimer: number, overdriveTimer: number }
+ */
+export function createPowerUpState() {
+  return {
+    shield: false,
+    magnetTimer: 0,
+    overdriveTimer: 0,
+  };
+}
+
+/**
+ * Activates or refreshes a power-up in the power-up state.
+ *
+ * @param {Object} state - Current power-up state
+ * @param {string} type - 'SHIELD' | 'MAGNET' | 'OVERDRIVE'
+ * @param {Object} [config] - Optional duration overrides
+ * @returns {Object} Updated state
+ */
+export function applyPowerUp(state, type, config = {}) {
+  if (!state) return state;
+
+  const magnetDuration = config.magnetDuration ?? GAME_CONFIG.POWERUP_DURATIONS.MAGNET;
+  const overdriveDuration = config.overdriveDuration ?? GAME_CONFIG.POWERUP_DURATIONS.OVERDRIVE;
+
+  if (type === GAME_CONFIG.POWERUP_TYPES.SHIELD) {
+    state.shield = true;
+  } else if (type === GAME_CONFIG.POWERUP_TYPES.MAGNET) {
+    state.magnetTimer = magnetDuration;
+  } else if (type === GAME_CONFIG.POWERUP_TYPES.OVERDRIVE) {
+    state.overdriveTimer = overdriveDuration;
+  }
+
+  return state;
+}
+
+/**
+ * Updates power-up countdown timers.
+ *
+ * @param {Object} state - Current power-up state
+ * @param {number} dt - Delta time in seconds
+ * @returns {Object} Updated state
+ */
+export function updatePowerUpTimers(state, dt) {
+  if (!state) return state;
+
+  if (state.magnetTimer > 0) {
+    state.magnetTimer = Math.max(0, state.magnetTimer - dt);
+  }
+  if (state.overdriveTimer > 0) {
+    state.overdriveTimer = Math.max(0, state.overdriveTimer - dt);
+  }
+
+  return state;
+}
+
+/**
+ * Calculates vector and movement for a disc attracted to player via magnet.
+ *
+ * @param {Object} player - { x, y, width, height }
+ * @param {Object} disc - { x, y, width, height }
+ * @param {number} dt - Delta time in seconds
+ * @param {Object} [config] - Optional magnet settings
+ * @returns {Object} { attracted: boolean, dx: number, dy: number, distance: number }
+ */
+export function calculateMagnetAttraction(player, disc, dt, config = {}) {
+  if (!player || !disc) return { attracted: false, dx: 0, dy: 0, distance: Infinity };
+
+  const radius = config.magnetRadius ?? GAME_CONFIG.MAGNET_RADIUS;
+  const pullSpeed = config.pullSpeed ?? GAME_CONFIG.MAGNET_PULL_SPEED;
+
+  const px = player.x + player.width / 2;
+  const py = player.y + player.height / 2;
+  const dxCenter = disc.x + disc.width / 2;
+  const dyCenter = disc.y + disc.height / 2;
+
+  const diffX = px - dxCenter;
+  const diffY = py - dyCenter;
+  const dist = Math.hypot(diffX, diffY);
+
+  if (dist > 0 && dist <= radius) {
+    const step = Math.min(dist, pullSpeed * dt);
+    const nx = diffX / dist;
+    const ny = diffY / dist;
+    return {
+      attracted: true,
+      dx: nx * step,
+      dy: ny * step,
+      distance: dist,
+    };
+  }
+
+  return {
+    attracted: false,
+    dx: 0,
+    dy: 0,
+    distance: dist,
+  };
+}
+
+/**
+ * Calculates air-combo multiplier based on consecutive airborne discs collected.
+ *
+ * @param {number} airDiscsCount - Consecutive airborne discs collected without touching ground
+ * @returns {number} Multiplier (1.0 to 3.0)
+ */
+export function calculateAirComboMultiplier(airDiscsCount) {
+  if (!airDiscsCount || airDiscsCount < GAME_CONFIG.AIR_COMBO_MIN_DISCS) {
+    return 1.0;
+  }
+  const multiplier = 1.0 + (airDiscsCount - 1) * 0.5;
+  return Math.min(GAME_CONFIG.MAX_AIR_COMBO_MULTIPLIER, Math.round(multiplier * 10) / 10);
+}
+
+/**
+ * Calculates bonus points awarded when landing an air combo.
+ *
+ * @param {number} airDiscsCount - Discs collected in air
+ * @param {number} [discBonus] - Points per disc
+ * @returns {number} Bonus score
+ */
+export function calculateAirComboBonus(airDiscsCount, discBonus = GAME_CONFIG.DISC_SCORE_BONUS) {
+  if (!airDiscsCount || airDiscsCount < GAME_CONFIG.AIR_COMBO_MIN_DISCS) {
+    return 0;
+  }
+  const mult = calculateAirComboMultiplier(airDiscsCount);
+  return Math.floor(airDiscsCount * discBonus * (mult - 1.0));
+}
+

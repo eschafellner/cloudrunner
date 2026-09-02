@@ -336,6 +336,162 @@ class SoundEngine {
     } catch {}
   }
 
+  /**
+   * Plays slide sound (friction / futuristic whoosh)
+   */
+  playSlide() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(320, now);
+      osc.frequency.exponentialRampToValueAtTime(90, now + 0.22);
+
+      oscGain.gain.setValueAtTime(0.22, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+
+      osc.connect(oscGain);
+      oscGain.connect(this.sfxGain);
+      osc.start(now);
+      osc.stop(now + 0.24);
+
+      // Filtered friction noise
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.22);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.4));
+      }
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(1400, now);
+      filter.frequency.exponentialRampToValueAtTime(400, now + 0.22);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.35, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.sfxGain);
+
+      noise.start(now);
+    } catch {}
+  }
+
+  /**
+   * Plays power-up pickup chime (sparkling ascending cyber chord)
+   */
+  playPowerUp() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      const freqs = [349.23, 440.00, 523.25, 659.25, 880.00]; // F4, A4, C5, E5, A5
+      freqs.forEach((f, idx) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const t = now + idx * 0.045;
+
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(f, t);
+        osc.frequency.exponentialRampToValueAtTime(f * 1.5, t + 0.25);
+
+        gain.gain.setValueAtTime(0.2, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        osc.start(t);
+        osc.stop(t + 0.3);
+      });
+    } catch {}
+  }
+
+  /**
+   * Plays shield shatter/absorption sound (electric discharge)
+   */
+  playShieldBreak() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+
+      // Resonant frequency sweep
+      const osc = this.ctx.createOscillator();
+      const oscGain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(800, now);
+      osc.frequency.exponentialRampToValueAtTime(120, now + 0.35);
+
+      oscGain.gain.setValueAtTime(0.3, now);
+      oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+
+      osc.connect(oscGain);
+      oscGain.connect(this.sfxGain);
+      osc.start(now);
+      osc.stop(now + 0.35);
+
+      // Glassy noise burst
+      const bufferSize = Math.floor(this.ctx.sampleRate * 0.28);
+      const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.3));
+      }
+
+      const noise = this.ctx.createBufferSource();
+      noise.buffer = buffer;
+      const filter = this.ctx.createBiquadFilter();
+      filter.type = 'highpass';
+      filter.frequency.setValueAtTime(2500, now);
+      filter.frequency.exponentialRampToValueAtTime(800, now + 0.28);
+
+      const noiseGain = this.ctx.createGain();
+      noiseGain.gain.setValueAtTime(0.4, now);
+      noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+
+      noise.connect(filter);
+      filter.connect(noiseGain);
+      noiseGain.connect(this.sfxGain);
+
+      noise.start(now);
+    } catch {}
+  }
+
+  /**
+   * Plays air combo reward chime (crisp double high chime)
+   */
+  playCombo() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      const notes = [1318.51, 1760.00]; // E6, A6
+      notes.forEach((freq, i) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const t = now + i * 0.08;
+
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.25, t + 0.15);
+
+        gain.gain.setValueAtTime(0.25, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+
+        osc.start(t);
+        osc.stop(t + 0.2);
+      });
+    } catch {}
+  }
+
   /* ------------------- SYNTHWAVE MUSIC ENGINE ------------------- */
 
   /**

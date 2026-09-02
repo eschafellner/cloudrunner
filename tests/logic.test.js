@@ -18,6 +18,15 @@ import {
   calculateSafeChasmWidth,
   checkPlatformLanding,
   checkPlayerInChasm,
+  triggerPlayerSlide,
+  cancelPlayerSlide,
+  updatePlayerSlide,
+  createPowerUpState,
+  applyPowerUp,
+  updatePowerUpTimers,
+  calculateMagnetAttraction,
+  calculateAirComboMultiplier,
+  calculateAirComboBonus,
   GAME_CONFIG,
 } from '../js/logic.js';
 
@@ -453,3 +462,154 @@ describe('Logic Module - Player Physics & Jump Logic', () => {
     assert.ok(player.invulnerabilityTimer < 1.0, 'Invulnerability timer should tick down');
   });
 });
+
+describe('Logic Module - Cyber-Slide Mechanics', () => {
+  it('should trigger slide when player is grounded', () => {
+    const player = {
+      y: 404, // groundY (460) - normalHeight (56)
+      height: 56,
+      isGrounded: true,
+      isSliding: false,
+    };
+
+    const success = triggerPlayerSlide(player);
+    assert.equal(success, true);
+    assert.equal(player.isSliding, true);
+    assert.equal(player.height, GAME_CONFIG.SLIDE_PLAYER_HEIGHT); // 28
+    assert.equal(player.slideTimer, GAME_CONFIG.SLIDE_DURATION);
+    // Y position should have moved down so bottom (feet) stays at 460
+    assert.equal(player.y, 404 + (56 - 28)); // 432
+    assert.equal(player.y + player.height, 460);
+  });
+
+  it('should reject slide when player is in mid-air or already sliding', () => {
+    const airPlayer = {
+      y: 200,
+      height: 56,
+      isGrounded: false,
+      isSliding: false,
+    };
+    assert.equal(triggerPlayerSlide(airPlayer), false);
+
+    const slidingPlayer = {
+      y: 432,
+      height: 28,
+      isGrounded: true,
+      isSliding: true,
+    };
+    assert.equal(triggerPlayerSlide(slidingPlayer), false);
+  });
+
+  it('should restore standing height when slide expires or is cancelled', () => {
+    const player = {
+      y: 432,
+      height: 28,
+      isGrounded: true,
+      isSliding: true,
+      slideTimer: 0.1,
+    };
+
+    // Update with dt that exceeds slideTimer
+    updatePlayerSlide(player, 0.15);
+    assert.equal(player.isSliding, false);
+    assert.equal(player.height, GAME_CONFIG.NORMAL_PLAYER_HEIGHT);
+    assert.equal(player.y, 404);
+    assert.equal(player.y + player.height, 460);
+  });
+
+  it('should automatically cancel slide when player jumps', () => {
+    const player = {
+      y: 432,
+      height: 28,
+      isGrounded: true,
+      isSliding: true,
+      slideTimer: 0.4,
+      jumpsRemaining: 2,
+    };
+
+    const action = triggerPlayerJump(player);
+    assert.equal(action, 'JUMP');
+    assert.equal(player.isSliding, false);
+    assert.equal(player.height, GAME_CONFIG.NORMAL_PLAYER_HEIGHT);
+    assert.equal(player.isGrounded, false);
+  });
+});
+
+describe('Logic Module - Power-Up System', () => {
+  it('should create initial empty power-up state', () => {
+    const state = createPowerUpState();
+    assert.equal(state.shield, false);
+    assert.equal(state.magnetTimer, 0);
+    assert.equal(state.overdriveTimer, 0);
+  });
+
+  it('should activate shield, magnet and overdrive properly', () => {
+    const state = createPowerUpState();
+    applyPowerUp(state, GAME_CONFIG.POWERUP_TYPES.SHIELD);
+    assert.equal(state.shield, true);
+
+    applyPowerUp(state, GAME_CONFIG.POWERUP_TYPES.MAGNET);
+    assert.equal(state.magnetTimer, GAME_CONFIG.POWERUP_DURATIONS.MAGNET);
+
+    applyPowerUp(state, GAME_CONFIG.POWERUP_TYPES.OVERDRIVE);
+    assert.equal(state.overdriveTimer, GAME_CONFIG.POWERUP_DURATIONS.OVERDRIVE);
+  });
+
+  it('should decrement power-up timers over time', () => {
+    const state = {
+      shield: true,
+      magnetTimer: 5.0,
+      overdriveTimer: 2.0,
+    };
+
+    updatePowerUpTimers(state, 1.5);
+    assert.equal(state.shield, true); // Shield has no timer
+    assert.equal(Math.round(state.magnetTimer * 10) / 10, 3.5);
+    assert.equal(Math.round(state.overdriveTimer * 10) / 10, 0.5);
+
+    updatePowerUpTimers(state, 1.0);
+    assert.equal(state.overdriveTimer, 0); // Clamped at 0
+  });
+
+  it('should calculate magnetic pull vector towards player within radius', () => {
+    const player = { x: 100, y: 300, width: 38, height: 56 };
+    const discNear = { x: 200, y: 300, width: 26, height: 26 };
+    const discFar = { x: 600, y: 300, width: 26, height: 26 };
+
+    const attractionNear = calculateMagnetAttraction(player, discNear, 0.016);
+    assert.equal(attractionNear.attracted, true);
+    assert.ok(attractionNear.dx < 0, 'Disc should be pulled left toward player');
+
+    const attractionFar = calculateMagnetAttraction(player, discFar, 0.016);
+    assert.equal(attractionFar.attracted, false);
+    assert.equal(attractionFar.dx, 0);
+  });
+});
+
+describe('Logic Module - Air-Combo System', () => {
+  it('should return 1.0x multiplier and 0 bonus for less than 2 airborne discs', () => {
+    assert.equal(calculateAirComboMultiplier(0), 1.0);
+    assert.equal(calculateAirComboMultiplier(1), 1.0);
+    assert.equal(calculateAirComboBonus(0), 0);
+    assert.equal(calculateAirComboBonus(1), 0);
+  });
+
+  it('should scale combo multiplier progressively with airborne discs', () => {
+    assert.equal(calculateAirComboMultiplier(2), 1.5);
+    assert.equal(calculateAirComboMultiplier(3), 2.0);
+    assert.equal(calculateAirComboMultiplier(4), 2.5);
+    assert.equal(calculateAirComboMultiplier(5), 3.0);
+    assert.equal(calculateAirComboMultiplier(10), 3.0); // Capped at 3.0
+  });
+
+  it('should calculate correct bonus points for combo chains', () => {
+    // 3 discs @ 10pts each * (2.0 - 1.0) = 30 bonus points
+    const bonus3 = calculateAirComboBonus(3, 10);
+    assert.equal(bonus3, 30);
+
+    // 4 discs @ 10pts each * (2.5 - 1.0) = 60 bonus points
+    const bonus4 = calculateAirComboBonus(4, 10);
+    assert.equal(bonus4, 60);
+  });
+});
+

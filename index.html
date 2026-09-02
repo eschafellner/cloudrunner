@@ -51,6 +51,17 @@
       </div>
     </header>
 
+    <!-- Active Power-ups Bar & Air-Combo HUD -->
+    <div id="hud-status-bar">
+      <div id="hud-powerups" class="powerups-container">
+        <!-- Dynamically populated via JS -->
+      </div>
+      <div id="hud-combo" class="hud-combo hidden">
+        <span class="combo-label">AIR COMBO</span>
+        <span id="combo-multiplier" class="combo-val">x1.5</span>
+      </div>
+    </div>
+
     <!-- Canvas Container -->
     <main id="canvas-container">
       <canvas id="game-canvas"></canvas>
@@ -64,15 +75,21 @@
 
           <div class="instructions-box">
             <div class="instruction-row">
-              <span class="key-badge">LEERTASTE</span>
+              <span class="key-badge">SPACE</span>
               <span class="key-badge">▲</span>
-              <span class="instruction-text">oder <strong>TAP</strong> zum Springen</span>
+              <span class="key-badge">W</span>
+              <span class="instruction-text">Springen & Doppelsprung</span>
+            </div>
+            <div class="instruction-row">
+              <span class="key-badge">▼</span>
+              <span class="key-badge">S</span>
+              <span class="instruction-text"><strong>SLIDE</strong> unter Barrieren durch</span>
             </div>
             <div class="instruction-row sub-instruction">
-              <span class="highlight-cyan">TIPP:</span> Doppelsprung in der Luft | Sammle <strong>20 Discs</strong> für ein Extraleben!
+              <span class="highlight-cyan">POWER-UPS:</span> 🛡️ Schild | 🧲 Magnet | ⚡ Overdrive-Dash
             </div>
             <div class="instruction-row sub-instruction">
-              <span class="highlight-yellow">NEU:</span> Nutze <strong>Plattformen</strong> und springe über <strong>Abgründe</strong>!
+              <span class="highlight-yellow">COMBOS:</span> Sammle Discs in der Luft für bis zu <strong>3x Multiplikator</strong>!
             </div>
           </div>
 
@@ -143,8 +160,14 @@
       </div>
     </main>
 
-    <!-- Mobile Touch Jump Button -->
+    <!-- Mobile Touch Controls -->
     <div id="mobile-controls">
+      <button id="mobile-slide-btn" class="mobile-touch-btn btn-slide" aria-label="Sliden">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20 18H4v-2h16v2zm-2-5l-1.41-1.41L13 15.17V6h-2v9.17l-3.59-3.58L6 13l6 6 6-6z"/>
+        </svg>
+        <span>SLIDE</span>
+      </button>
       <button id="mobile-jump-btn" class="mobile-touch-btn" aria-label="Springen">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="currentColor">
           <path d="M12 4l-8 8h5v8h6v-8h5z"/>

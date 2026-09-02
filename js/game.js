@@ -15,6 +15,15 @@ import {
   getDayNightCycle,
   updatePlayerPhysics,
   triggerPlayerJump,
+  triggerPlayerSlide,
+  cancelPlayerSlide,
+  updatePlayerSlide,
+  createPowerUpState,
+  applyPowerUp,
+  updatePowerUpTimers,
+  calculateMagnetAttraction,
+  calculateAirComboMultiplier,
+  calculateAirComboBonus,
   updateDiscCollection,
   calculateSafeChasmWidth,
   checkPlayerInChasm,
@@ -33,6 +42,9 @@ class Game {
     this.uiLivesContainer = document.getElementById('hud-lives');
     this.uiDiscs = document.getElementById('hud-discs');
     this.uiMuteBtn = document.getElementById('mute-btn');
+    this.hudPowerups = document.getElementById('hud-powerups');
+    this.hudCombo = document.getElementById('hud-combo');
+    this.comboMultiplierEl = document.getElementById('combo-multiplier');
     this.startOverlay = document.getElementById('start-overlay');
     this.gameOverOverlay = document.getElementById('gameover-overlay');
     this.highscoreOverlay = document.getElementById('highscore-overlay');
@@ -46,6 +58,7 @@ class Game {
     this.highscoreListEl = document.getElementById('highscore-list');
     this.startHighscoreListEl = document.getElementById('start-highscore-list');
     this.mobileJumpBtn = document.getElementById('mobile-jump-btn');
+    this.mobileSlideBtn = document.getElementById('mobile-slide-btn');
 
     // Responsive virtual resolution
     this.vWidth = 960;
@@ -63,11 +76,15 @@ class Game {
     this.obstaclesCleared = 0;
     this.discs = 0;
     this.totalDiscsCollected = 0;
+    this.airDiscsCount = 0; // For Air Combo tracking
     this.spawnTimer = 0;
     this.nextSpawnInterval = GAME_CONFIG.BASE_SPAWN_INTERVAL;
     this.lastFrameTime = performance.now();
     this.screenShake = 0;
     this.screenFlash = 0;
+
+    // Power-Up State
+    this.powerUpState = createPowerUpState();
 
     // Player object
     this.player = {
@@ -77,6 +94,8 @@ class Game {
       height: 56,
       vy: 0,
       isGrounded: true,
+      isSliding: false,
+      slideTimer: 0,
       currentPlatform: null,
       jumpsRemaining: 2,
       lives: GAME_CONFIG.INITIAL_LIVES,
@@ -95,6 +114,11 @@ class Game {
     this.discPool = [];
     this.activeDiscs = [];
     this.initDiscPool(30);
+
+    // Power-Up pool
+    this.powerUpPool = [];
+    this.activePowerUps = [];
+    this.initPowerUpPool(8);
 
     // Platform pool
     this.platformPool = [];
@@ -165,6 +189,21 @@ class Game {
         animTimer: 0,
         sparkleOffset: Math.random() * Math.PI * 2,
         hitPadding: { x: 2, y: 2, w: 4, h: 4 },
+      });
+    }
+  }
+
+  initPowerUpPool(size) {
+    for (let i = 0; i < size; i++) {
+      this.powerUpPool.push({
+        active: false,
+        x: 0,
+        y: 0,
+        width: 32,
+        height: 32,
+        type: GAME_CONFIG.POWERUP_TYPES.SHIELD,
+        animTimer: 0,
+        hitPadding: { x: 4, y: 4, w: 8, h: 8 },
       });
     }
   }
@@ -415,19 +454,46 @@ class Game {
       if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
         e.preventDefault();
         this.handleJumpInput();
+      } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        this.handleSlideInput();
       }
     });
 
-    const triggerJump = (e) => {
+    let touchStartY = 0;
+    let touchStartX = 0;
+    this.canvas.addEventListener('touchstart', (e) => {
       if (e.target && (e.target.closest('#gameover-overlay') || e.target.closest('#mute-btn') || e.target.closest('input') || e.target.closest('button'))) {
         return;
       }
-      e.preventDefault();
-      this.handleJumpInput();
-    };
+      const touch = e.touches[0];
+      touchStartX = touch.clientX;
+      touchStartY = touch.clientY;
+    }, { passive: true });
 
-    this.canvas.addEventListener('touchstart', triggerJump, { passive: false });
-    this.canvas.addEventListener('mousedown', triggerJump);
+    this.canvas.addEventListener('touchend', (e) => {
+      if (e.target && (e.target.closest('#gameover-overlay') || e.target.closest('#mute-btn') || e.target.closest('input') || e.target.closest('button'))) {
+        return;
+      }
+      const touch = e.changedTouches[0];
+      const deltaY = touch.clientY - touchStartY;
+      const deltaX = touch.clientX - touchStartX;
+
+      if (deltaY > 35 && Math.abs(deltaY) > Math.abs(deltaX)) {
+        this.handleSlideInput();
+      } else if (deltaY < -35 && Math.abs(deltaY) > Math.abs(deltaX)) {
+        this.handleJumpInput();
+      } else {
+        this.handleJumpInput();
+      }
+    }, { passive: true });
+
+    this.canvas.addEventListener('mousedown', (e) => {
+      if (e.target && (e.target.closest('#gameover-overlay') || e.target.closest('#mute-btn') || e.target.closest('input') || e.target.closest('button'))) {
+        return;
+      }
+      this.handleJumpInput();
+    });
 
     if (this.mobileJumpBtn) {
       this.mobileJumpBtn.addEventListener('touchstart', (e) => {
@@ -437,6 +503,17 @@ class Game {
       this.mobileJumpBtn.addEventListener('mousedown', (e) => {
         e.preventDefault();
         this.handleJumpInput();
+      });
+    }
+
+    if (this.mobileSlideBtn) {
+      this.mobileSlideBtn.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.handleSlideInput();
+      }, { passive: false });
+      this.mobileSlideBtn.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        this.handleSlideInput();
       });
     }
 
@@ -528,6 +605,23 @@ class Game {
     }
   }
 
+  handleSlideInput() {
+    soundEngine.init();
+
+    if (this.state === 'START') {
+      this.startGame();
+      return;
+    }
+
+    if (this.state !== 'PLAYING') return;
+
+    const slid = triggerPlayerSlide(this.player);
+    if (slid) {
+      soundEngine.playSlide();
+      this.emitParticles(this.player.x + 10, this.player.y + this.player.height, 10, '#00f0ff');
+    }
+  }
+
   startGame() {
     soundEngine.init();
     soundEngine.startMusic();
@@ -540,14 +634,20 @@ class Game {
     this.obstaclesCleared = 0;
     this.discs = 0;
     this.totalDiscsCollected = 0;
+    this.airDiscsCount = 0;
     this.spawnTimer = 0.6;
     this.currentSpeed = GAME_CONFIG.BASE_SPEED;
     this.screenShake = 0;
     this.screenFlash = 0;
 
+    this.powerUpState = createPowerUpState();
+
+    this.player.height = GAME_CONFIG.NORMAL_PLAYER_HEIGHT;
     this.player.y = this.groundY - this.player.height;
     this.player.vy = 0;
     this.player.isGrounded = true;
+    this.player.isSliding = false;
+    this.player.slideTimer = 0;
     this.player.currentPlatform = null;
     this.player.jumpsRemaining = 2;
     this.player.lives = GAME_CONFIG.INITIAL_LIVES;
@@ -558,6 +658,8 @@ class Game {
     this.activeObstacles = [];
     this.activeDiscs.forEach(d => d.active = false);
     this.activeDiscs = [];
+    this.activePowerUps.forEach(p => p.active = false);
+    this.activePowerUps = [];
     this.activePlatforms.forEach(p => p.active = false);
     this.activePlatforms = [];
     this.activeChasms.forEach(c => c.active = false);
@@ -565,6 +667,8 @@ class Game {
     this.activeParticles.forEach(p => p.active = false);
     this.activeParticles = [];
     this.floatingTexts = [];
+
+    if (this.hudCombo) this.hudCombo.classList.add('hidden');
 
     this.updateHUD();
   }
@@ -731,6 +835,29 @@ class Game {
         this.uiLivesContainer.appendChild(heart);
       }
     }
+
+    // Render Active Power-Up Badges
+    if (this.hudPowerups) {
+      this.hudPowerups.innerHTML = '';
+      if (this.powerUpState.shield) {
+        const badge = document.createElement('div');
+        badge.className = 'powerup-badge badge-shield';
+        badge.innerHTML = '<span>🛡️ SHIELD</span>';
+        this.hudPowerups.appendChild(badge);
+      }
+      if (this.powerUpState.magnetTimer > 0) {
+        const badge = document.createElement('div');
+        badge.className = 'powerup-badge badge-magnet';
+        badge.innerHTML = `<span>🧲 MAGNET ${this.powerUpState.magnetTimer.toFixed(1)}s</span>`;
+        this.hudPowerups.appendChild(badge);
+      }
+      if (this.powerUpState.overdriveTimer > 0) {
+        const badge = document.createElement('div');
+        badge.className = 'powerup-badge badge-overdrive';
+        badge.innerHTML = `<span>⚡ OVERDRIVE ${this.powerUpState.overdriveTimer.toFixed(1)}s</span>`;
+        this.hudPowerups.appendChild(badge);
+      }
+    }
   }
 
   /* ------------------- UNIFIED SPAWNING SYSTEM ------------------- */
@@ -743,6 +870,20 @@ class Game {
     disc.y = y;
     disc.animTimer = Math.random() * 5;
     this.activeDiscs.push(disc);
+  }
+
+  spawnPowerUp(x, y, type = null) {
+    const pu = this.powerUpPool.find(p => !p.active);
+    if (!pu) return;
+    const types = [GAME_CONFIG.POWERUP_TYPES.SHIELD, GAME_CONFIG.POWERUP_TYPES.MAGNET, GAME_CONFIG.POWERUP_TYPES.OVERDRIVE];
+    pu.type = type || types[Math.floor(Math.random() * types.length)];
+    pu.active = true;
+    pu.x = x;
+    pu.y = y;
+    pu.width = 30;
+    pu.height = 30;
+    pu.animTimer = Math.random() * Math.PI * 2;
+    this.activePowerUps.push(pu);
   }
 
   spawnDiscGroup(startX, baseY, pattern = 'ROW', count = 3) {
@@ -785,6 +926,11 @@ class Game {
         const discCount = Math.min(4, Math.floor(platform.width / 45));
         this.spawnDiscGroup(platform.x + 20, platform.y - 32, 'ROW', discCount);
 
+        // Chance for Power-Up capsule on platform
+        if (Math.random() < 0.25) {
+          this.spawnPowerUp(platform.x + platform.width - 32, platform.y - 44);
+        }
+
         // Ground hazard underneath if platform is high enough
         if (platform.elevation > 65 && Math.random() > 0.4) {
           const obs = this.obstaclePool.find(o => !o.active);
@@ -815,6 +961,11 @@ class Game {
         // Floating Discs over the chasm (reward for jump)
         this.spawnDiscGroup(chasm.x + 10, this.groundY - 55, 'ARC', 3);
 
+        // Chance for floating Power-Up above chasm
+        if (Math.random() < 0.22) {
+          this.spawnPowerUp(chasm.x + chasm.width / 2 - 15, this.groundY - 75);
+        }
+
         // Optional crossing platform high above wide chasms
         if (safeWidth > 130 && Math.random() > 0.5) {
           const plat = this.platformPool.find(p => !p.active);
@@ -837,13 +988,19 @@ class Game {
       const count = 3 + Math.floor(Math.random() * 3); // 3 to 5
       const baseY = form === 'ROW' ? this.groundY - 30 : this.groundY - 35;
       this.spawnDiscGroup(spawnX, baseY, form, count);
+
+      // Rare chance for Power-Up capsule inside disc cluster
+      if (Math.random() < 0.22) {
+        this.spawnPowerUp(spawnX + 60, this.groundY - 45);
+      }
     }
     // Segment 4: Standard Obstacle with optional Disc Arc
     else {
       const obstacle = this.obstaclePool.find(o => !o.active);
       if (obstacle) {
         const types = ['BARRIER'];
-        if (this.gameTime > 15) types.push('LASER');
+        if (this.gameTime > 12) types.push('HIGH_LASER');
+        if (this.gameTime > 18) types.push('LASER');
         if (this.gameTime > 30) types.push('DRONE');
 
         const type = types[Math.floor(Math.random() * types.length)];
@@ -858,6 +1015,15 @@ class Game {
           obstacle.height = 42;
           obstacle.y = this.groundY - obstacle.height;
           obstacle.hitPadding = { x: 6, y: 6, w: 12, h: 8 };
+        } else if (type === 'HIGH_LASER') {
+          obstacle.width = 26;
+          obstacle.height = 76;
+          // Bottom edge is at groundY - 32 -> standing player hits, sliding player glides under
+          obstacle.y = this.groundY - obstacle.height - 32;
+          obstacle.hitPadding = { x: 4, y: 0, w: 8, h: 4 };
+
+          // Discs on ground under the high laser to reward sliding
+          this.spawnDiscGroup(obstacle.x - 20, this.groundY - 14, 'ROW', 3);
         } else if (type === 'LASER') {
           obstacle.width = 24;
           obstacle.height = 72;
@@ -873,8 +1039,8 @@ class Game {
 
         this.activeObstacles.push(obstacle);
 
-        // Overhead Discs rewarding a clean jump
-        if (Math.random() > 0.4) {
+        // Overhead Discs rewarding a clean jump (for non-high-laser)
+        if (type !== 'HIGH_LASER' && Math.random() > 0.4) {
           this.spawnDiscGroup(obstacle.x - 30, this.groundY - obstacle.height - 35, 'ARC', 3);
         }
       }
@@ -963,8 +1129,34 @@ class Game {
     this.currentSpeed = calculateGameSpeed(this.gameTime);
     this.currentLighting = getDayNightCycle(this.gameTime);
 
+    // 0. Update Slide State
+    updatePlayerSlide(this.player, dt);
+    if (this.player.isSliding && Math.random() < 0.4) {
+      this.emitParticles(this.player.x, this.player.y + this.player.height, 2, '#00f0ff');
+    }
+
+    // 0.1 Update Power-Up Timers & Overdrive Speed Boost
+    updatePowerUpTimers(this.powerUpState, dt);
+    if (this.powerUpState.overdriveTimer > 0) {
+      this.currentSpeed += GAME_CONFIG.OVERDRIVE_SPEED_BOOST;
+    }
+
     // Update Player Physics with Platforms and Chasms
+    const wasGrounded = this.player.isGrounded;
     updatePlayerPhysics(this.player, dt, this.groundY, this.activePlatforms, this.activeChasms);
+
+    // Landing check for Air-Combos
+    if (!wasGrounded && this.player.isGrounded) {
+      if (this.airDiscsCount >= GAME_CONFIG.AIR_COMBO_MIN_DISCS) {
+        const mult = calculateAirComboMultiplier(this.airDiscsCount);
+        const bonus = calculateAirComboBonus(this.airDiscsCount);
+        this.score += bonus;
+        soundEngine.playCombo();
+        this.addFloatingText(this.player.x + 20, this.player.y - 25, `COMBO x${mult.toFixed(1)}! +${bonus} PTS`, '#ff007f');
+      }
+      this.airDiscsCount = 0;
+      if (this.hudCombo) this.hudCombo.classList.add('hidden');
+    }
 
     // Check if player fell into a chasm
     if (this.activeChasms.length > 0) {
@@ -1021,6 +1213,15 @@ class Game {
       disc.x -= this.currentSpeed * dt;
       disc.animTimer += dt;
 
+      // Magnet attraction
+      if (this.powerUpState.magnetTimer > 0) {
+        const pull = calculateMagnetAttraction(this.player, disc, dt);
+        if (pull.attracted) {
+          disc.x += pull.dx;
+          disc.y += pull.dy;
+        }
+      }
+
       if (checkCollision(this.player, disc)) {
         this.collectDisc(disc, i);
         continue;
@@ -1029,6 +1230,23 @@ class Game {
       if (disc.x + disc.width < -100) {
         disc.active = false;
         this.activeDiscs.splice(i, 1);
+      }
+    }
+
+    // 3.1 Update Power-Up Capsules
+    for (let i = this.activePowerUps.length - 1; i >= 0; i--) {
+      const pu = this.activePowerUps[i];
+      pu.x -= this.currentSpeed * dt;
+      pu.animTimer += dt;
+
+      if (checkCollision(this.player, pu)) {
+        this.collectPowerUp(pu, i);
+        continue;
+      }
+
+      if (pu.x + pu.width < -100) {
+        pu.active = false;
+        this.activePowerUps.splice(i, 1);
       }
     }
 
@@ -1054,9 +1272,26 @@ class Game {
         }
       }
 
-      // Check Collision with Player
+      // Check Collision with Player (respecting Shield & Overdrive)
       if (this.player.invulnerabilityTimer <= 0 && checkCollision(this.player, obs)) {
-        this.handlePlayerHit(obs);
+        if (this.powerUpState.overdriveTimer > 0) {
+          obs.active = false;
+          this.activeObstacles.splice(i, 1);
+          soundEngine.playHurt();
+          this.emitParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, 22, '#ff007f');
+          this.addFloatingText(obs.x + 10, obs.y - 10, 'SMASHED! +50', '#ffe600');
+          this.score += 50;
+        } else if (this.powerUpState.shield) {
+          this.powerUpState.shield = false;
+          this.player.invulnerabilityTimer = 1.0;
+          this.screenShake = 10;
+          soundEngine.playShieldBreak();
+          this.emitParticles(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, 25, '#00f0ff');
+          this.addFloatingText(this.player.x, this.player.y - 20, 'SHIELD BROKEN!', '#00f0ff');
+          this.updateHUD();
+        } else {
+          this.handlePlayerHit(obs);
+        }
       }
 
       if (obs.x + obs.width < -100) {
@@ -1104,6 +1339,18 @@ class Game {
     this.activeDiscs.splice(index, 1);
     this.totalDiscsCollected++;
 
+    // Track air combo
+    if (!this.player.isGrounded) {
+      this.airDiscsCount++;
+      if (this.airDiscsCount >= GAME_CONFIG.AIR_COMBO_MIN_DISCS) {
+        const mult = calculateAirComboMultiplier(this.airDiscsCount);
+        if (this.hudCombo && this.comboMultiplierEl) {
+          this.hudCombo.classList.remove('hidden');
+          this.comboMultiplierEl.textContent = `x${mult.toFixed(1)}`;
+        }
+      }
+    }
+
     soundEngine.playDiscPickup();
     this.emitParticles(disc.x + disc.width / 2, disc.y + disc.height / 2, 10, '#ffe600');
 
@@ -1120,6 +1367,29 @@ class Game {
       this.addFloatingText(disc.x, disc.y - 10, '+1 DISC', '#ffe600');
     }
 
+    this.updateHUD();
+  }
+
+  collectPowerUp(pu, index) {
+    pu.active = false;
+    this.activePowerUps.splice(index, 1);
+
+    applyPowerUp(this.powerUpState, pu.type);
+    soundEngine.playPowerUp();
+
+    let color = '#00f0ff';
+    let text = '+SHIELD!';
+    if (pu.type === GAME_CONFIG.POWERUP_TYPES.MAGNET) {
+      color = '#ffe600';
+      text = '+MAGNET (8s)!';
+    } else if (pu.type === GAME_CONFIG.POWERUP_TYPES.OVERDRIVE) {
+      color = '#ff007f';
+      text = '+OVERDRIVE (4.5s)!';
+      this.screenFlash = 0.35;
+    }
+
+    this.emitParticles(pu.x + pu.width / 2, pu.y + pu.height / 2, 22, color);
+    this.addFloatingText(this.player.x, this.player.y - 30, text, color);
     this.updateHUD();
   }
 
@@ -1182,6 +1452,9 @@ class Game {
 
     // 7. Collectible Discs
     this.renderDiscs();
+
+    // 7.1 Power-Up Capsules
+    this.renderPowerUps();
 
     // 8. Obstacles
     this.renderObstacles();
@@ -1525,6 +1798,51 @@ class Game {
     });
   }
 
+  renderPowerUps() {
+    this.activePowerUps.forEach(pu => {
+      this.ctx.save();
+      const cx = pu.x + pu.width / 2;
+      const cy = pu.y + pu.height / 2 + Math.sin(pu.animTimer * 4) * 4;
+      this.ctx.translate(cx, cy);
+
+      let mainColor = '#00f0ff';
+      let symbol = '🛡️';
+      if (pu.type === GAME_CONFIG.POWERUP_TYPES.MAGNET) {
+        mainColor = '#ffe600';
+        symbol = '🧲';
+      } else if (pu.type === GAME_CONFIG.POWERUP_TYPES.OVERDRIVE) {
+        mainColor = '#ff007f';
+        symbol = '⚡';
+      }
+
+      // Glowing diamond/hexagon capsule
+      this.ctx.strokeStyle = mainColor;
+      this.ctx.lineWidth = 2;
+      this.ctx.shadowColor = mainColor;
+      this.ctx.shadowBlur = 12;
+      this.ctx.fillStyle = 'rgba(14, 12, 28, 0.88)';
+
+      this.ctx.beginPath();
+      const size = 15;
+      this.ctx.moveTo(0, -size);
+      this.ctx.lineTo(size, 0);
+      this.ctx.lineTo(0, size);
+      this.ctx.lineTo(-size, 0);
+      this.ctx.closePath();
+      this.ctx.fill();
+      this.ctx.stroke();
+
+      // Icon symbol
+      this.ctx.font = '14px sans-serif';
+      this.ctx.textAlign = 'center';
+      this.ctx.textBaseline = 'middle';
+      this.ctx.shadowBlur = 0;
+      this.ctx.fillText(symbol, 0, 1);
+
+      this.ctx.restore();
+    });
+  }
+
   renderPlayer() {
     const p = this.player;
     const { neonIntensity } = this.currentLighting;
@@ -1537,77 +1855,168 @@ class Game {
     this.ctx.save();
     this.ctx.translate(p.x, p.y);
 
+    // Power-Up Auras behind player
+    if (this.powerUpState.shield) {
+      this.ctx.save();
+      this.ctx.strokeStyle = '#00f0ff';
+      this.ctx.lineWidth = 2.5;
+      this.ctx.shadowColor = '#00f0ff';
+      this.ctx.shadowBlur = 16;
+      this.ctx.fillStyle = 'rgba(0, 240, 255, 0.15)';
+      this.ctx.beginPath();
+      this.ctx.ellipse(p.width / 2, p.height / 2, p.width * 0.75 + 4, (p.height / 2) + 6, 0, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
+    if (this.powerUpState.overdriveTimer > 0) {
+      this.ctx.save();
+      this.ctx.strokeStyle = '#ff007f';
+      this.ctx.lineWidth = 2;
+      this.ctx.shadowColor = '#ff007f';
+      this.ctx.shadowBlur = 18;
+      this.ctx.strokeRect(-4, -4, p.width + 8, p.height + 8);
+      this.ctx.restore();
+    }
+
+    if (this.powerUpState.magnetTimer > 0) {
+      this.ctx.save();
+      this.ctx.strokeStyle = 'rgba(255, 230, 0, 0.7)';
+      this.ctx.lineWidth = 1.5;
+      this.ctx.setLineDash([4, 4]);
+      this.ctx.beginPath();
+      this.ctx.arc(p.width / 2, p.height / 2, 34 + Math.sin(this.gameTime * 8) * 4, 0, Math.PI * 2);
+      this.ctx.stroke();
+      this.ctx.restore();
+    }
+
     // Neon Motion Trail
     if (p.trail.length > 2) {
       this.ctx.save();
       for (let i = 0; i < p.trail.length; i++) {
         const t = p.trail[i];
-        const alpha = (i / p.trail.length) * 0.3;
-        this.ctx.fillStyle = `rgba(0, 240, 255, ${alpha})`;
-        this.ctx.fillRect(t.x - p.x, t.y - p.y + 10, p.width, p.height - 15);
+        const alpha = (i / p.trail.length) * (this.powerUpState.overdriveTimer > 0 ? 0.6 : 0.3);
+        const trailColor = this.powerUpState.overdriveTimer > 0 ? '#ff007f' : '#00f0ff';
+        this.ctx.fillStyle = trailColor;
+        this.ctx.globalAlpha = alpha;
+        this.ctx.fillRect(t.x - p.x, t.y - p.y + (p.isSliding ? 4 : 10), p.width, p.height - (p.isSliding ? 8 : 15));
       }
       this.ctx.restore();
     }
 
-    // Scarf / Trenchcoat Tails
-    this.ctx.fillStyle = '#ff007f';
-    this.ctx.shadowColor = '#ff007f';
-    this.ctx.shadowBlur = 6 * neonIntensity;
-    const flap = Math.sin(this.player.runFrame * 3) * 6;
-    this.ctx.beginPath();
-    this.ctx.moveTo(8, 26);
-    this.ctx.lineTo(-18, 30 + flap);
-    this.ctx.lineTo(-24, 42 + flap);
-    this.ctx.lineTo(6, 38);
-    this.ctx.closePath();
-    this.ctx.fill();
-
-    // Legs & Running Animation
-    const legPhase = p.isGrounded ? this.player.runFrame : 2;
-    const l1Offset = Math.sin(legPhase) * 12;
-    const l2Offset = Math.sin(legPhase + Math.PI) * 12;
-
-    // Back leg
-    this.ctx.fillStyle = '#1e1c2e';
-    this.ctx.fillRect(10 + l2Offset, 36, 6, 20);
-    this.ctx.fillStyle = '#00f0ff';
-    this.ctx.fillRect(10 + l2Offset, 52, 10, 4);
-
-    // Front leg
-    this.ctx.fillStyle = '#2d2a45';
-    this.ctx.fillRect(18 + l1Offset, 36, 6, 20);
-    this.ctx.fillStyle = '#00f0ff';
-    this.ctx.fillRect(18 + l1Offset, 52, 10, 4);
-
-    // Torso / Cyber Jacket
-    this.ctx.fillStyle = '#111022';
-    this.ctx.fillRect(8, 16, 22, 22);
-
-    this.ctx.fillStyle = '#ffe600';
-    this.ctx.fillRect(14, 18, 3, 16);
-
-    // Head & Helmet
-    this.ctx.fillStyle = '#1f1d36';
-    this.ctx.fillRect(12, 2, 18, 14);
-
-    // Glowing Neon Cyber Visor
-    this.ctx.fillStyle = '#00f0ff';
-    this.ctx.shadowColor = '#00f0ff';
-    this.ctx.shadowBlur = 12;
-    this.ctx.fillRect(20, 6, 12, 5);
-
-    this.ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
-    this.ctx.fillRect(6, 7, 14, 3);
-
-    // Jump Thruster Boot Glow
-    if (!p.isGrounded) {
+    if (p.isSliding) {
+      // ----------------- SLIDING POSE -----------------
+      // Scarf trailing flat behind
       this.ctx.fillStyle = '#ff007f';
       this.ctx.shadowColor = '#ff007f';
-      this.ctx.shadowBlur = 14;
+      this.ctx.shadowBlur = 6 * neonIntensity;
+      const flap = Math.sin(this.player.runFrame * 4) * 3;
       this.ctx.beginPath();
-      this.ctx.arc(14 + l1Offset, 56, 4, 0, Math.PI * 2);
-      this.ctx.arc(14 + l2Offset, 56, 4, 0, Math.PI * 2);
+      this.ctx.moveTo(4, 14);
+      this.ctx.lineTo(-20, 10 + flap);
+      this.ctx.lineTo(-16, 18 + flap);
+      this.ctx.lineTo(4, 18);
+      this.ctx.closePath();
       this.ctx.fill();
+
+      // Lower body / sliding legs extended forward
+      this.ctx.fillStyle = '#1e1c2e';
+      this.ctx.fillRect(14, 16, 24, 8);
+
+      // Boots sliding on asphalt
+      this.ctx.fillStyle = '#2d2a45';
+      this.ctx.fillRect(28, 16, 12, 9);
+      this.ctx.fillStyle = '#00f0ff';
+      this.ctx.shadowColor = '#00f0ff';
+      this.ctx.shadowBlur = 8;
+      this.ctx.fillRect(28, 23, 14, 3); // Neon glowing boot sole
+
+      // Torso / low profile cyber jacket
+      this.ctx.fillStyle = '#111022';
+      this.ctx.fillRect(4, 10, 20, 14);
+      this.ctx.fillStyle = '#ffe600';
+      this.ctx.fillRect(10, 12, 12, 3);
+
+      // Head & Helmet tilted forward
+      this.ctx.fillStyle = '#1f1d36';
+      this.ctx.fillRect(16, 2, 16, 12);
+
+      // Glowing Neon Cyber Visor
+      this.ctx.fillStyle = '#00f0ff';
+      this.ctx.shadowColor = '#00f0ff';
+      this.ctx.shadowBlur = 12;
+      this.ctx.fillRect(24, 4, 10, 4);
+
+      // Thruster boost while sliding
+      this.ctx.fillStyle = '#ff007f';
+      this.ctx.shadowColor = '#ff007f';
+      this.ctx.shadowBlur = 12;
+      this.ctx.beginPath();
+      this.ctx.arc(2, 22, 3, 0, Math.PI * 2);
+      this.ctx.fill();
+    } else {
+      // ----------------- STANDING / RUNNING POSE -----------------
+      // Scarf / Trenchcoat Tails
+      this.ctx.fillStyle = '#ff007f';
+      this.ctx.shadowColor = '#ff007f';
+      this.ctx.shadowBlur = 6 * neonIntensity;
+      const flap = Math.sin(this.player.runFrame * 3) * 6;
+      this.ctx.beginPath();
+      this.ctx.moveTo(8, 26);
+      this.ctx.lineTo(-18, 30 + flap);
+      this.ctx.lineTo(-24, 42 + flap);
+      this.ctx.lineTo(6, 38);
+      this.ctx.closePath();
+      this.ctx.fill();
+
+      // Legs & Running Animation
+      const legPhase = p.isGrounded ? this.player.runFrame : 2;
+      const l1Offset = Math.sin(legPhase) * 12;
+      const l2Offset = Math.sin(legPhase + Math.PI) * 12;
+
+      // Back leg
+      this.ctx.fillStyle = '#1e1c2e';
+      this.ctx.fillRect(10 + l2Offset, 36, 6, 20);
+      this.ctx.fillStyle = '#00f0ff';
+      this.ctx.fillRect(10 + l2Offset, 52, 10, 4);
+
+      // Front leg
+      this.ctx.fillStyle = '#2d2a45';
+      this.ctx.fillRect(18 + l1Offset, 36, 6, 20);
+      this.ctx.fillStyle = '#00f0ff';
+      this.ctx.fillRect(18 + l1Offset, 52, 10, 4);
+
+      // Torso / Cyber Jacket
+      this.ctx.fillStyle = '#111022';
+      this.ctx.fillRect(8, 16, 22, 22);
+
+      this.ctx.fillStyle = '#ffe600';
+      this.ctx.fillRect(14, 18, 3, 16);
+
+      // Head & Helmet
+      this.ctx.fillStyle = '#1f1d36';
+      this.ctx.fillRect(12, 2, 18, 14);
+
+      // Glowing Neon Cyber Visor
+      this.ctx.fillStyle = '#00f0ff';
+      this.ctx.shadowColor = '#00f0ff';
+      this.ctx.shadowBlur = 12;
+      this.ctx.fillRect(20, 6, 12, 5);
+
+      this.ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
+      this.ctx.fillRect(6, 7, 14, 3);
+
+      // Jump Thruster Boot Glow
+      if (!p.isGrounded) {
+        this.ctx.fillStyle = '#ff007f';
+        this.ctx.shadowColor = '#ff007f';
+        this.ctx.shadowBlur = 14;
+        this.ctx.beginPath();
+        this.ctx.arc(14 + l1Offset, 56, 4, 0, Math.PI * 2);
+        this.ctx.arc(14 + l2Offset, 56, 4, 0, Math.PI * 2);
+        this.ctx.fill();
+      }
     }
 
     this.ctx.restore();
@@ -1639,6 +2048,34 @@ class Game {
         this.ctx.fillStyle = '#ff0055';
         this.ctx.beginPath();
         this.ctx.arc(obs.width / 2, obs.height * 0.65, 4, 0, Math.PI * 2);
+        this.ctx.fill();
+
+      } else if (obs.type === 'HIGH_LASER') {
+        this.ctx.translate(obs.x, obs.y);
+
+        // Ceiling laser emitter mount
+        this.ctx.fillStyle = '#1c1b29';
+        this.ctx.fillRect(0, 0, obs.width, 14);
+
+        // Hazard stripes on emitter
+        this.ctx.fillStyle = '#ffe600';
+        this.ctx.fillRect(2, 2, 6, 10);
+        this.ctx.fillRect(obs.width - 8, 2, 6, 10);
+
+        // Pulsing vertical laser beam
+        const pulse = 0.8 + 0.2 * Math.sin(obs.animTimer * 14);
+        this.ctx.fillStyle = '#ff0055';
+        this.ctx.shadowColor = '#ff0055';
+        this.ctx.shadowBlur = 16 * pulse;
+        this.ctx.fillRect(obs.width / 2 - 3, 14, 6, obs.height - 18);
+
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(obs.width / 2 - 1, 14, 2, obs.height - 18);
+
+        // Bottom focus emitter lens (leaves opening for slide)
+        this.ctx.fillStyle = '#ff007f';
+        this.ctx.beginPath();
+        this.ctx.arc(obs.width / 2, obs.height - 4, 4, 0, Math.PI * 2);
         this.ctx.fill();
 
       } else if (obs.type === 'LASER') {
