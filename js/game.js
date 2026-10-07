@@ -27,6 +27,18 @@ import {
   updateDiscCollection,
   calculateSafeChasmWidth,
   checkPlayerInChasm,
+  triggerPlayerFastFall,
+  getInitialMetaState,
+  migrateMetaState,
+  bankDiscs,
+  buyShopSkin,
+  buyShopTrail,
+  buyUpgrade,
+  checkAchievements,
+  SKIN_CATALOG,
+  TRAIL_CATALOG,
+  UPGRADE_CATALOG,
+  ACHIEVEMENTS_CONFIG,
 } from './logic.js';
 
 import { soundEngine } from './audio.js';
@@ -48,9 +60,20 @@ class Game {
     this.startOverlay = document.getElementById('start-overlay');
     this.gameOverOverlay = document.getElementById('gameover-overlay');
     this.highscoreOverlay = document.getElementById('highscore-overlay');
+    this.shopOverlay = document.getElementById('shop-overlay');
+    this.achievementsOverlay = document.getElementById('achievements-overlay');
     this.startBtn = document.getElementById('start-btn');
     this.showHighscoresBtn = document.getElementById('show-highscores-btn');
     this.closeHighscoresBtn = document.getElementById('close-highscores-btn');
+    this.showShopBtn = document.getElementById('show-shop-btn');
+    this.closeShopBtn = document.getElementById('close-shop-btn');
+    this.showAchievementsBtn = document.getElementById('show-achievements-btn');
+    this.closeAchievementsBtn = document.getElementById('close-achievements-btn');
+    this.shopBankDiscs = document.getElementById('shop-bank-discs');
+    this.shopContent = document.getElementById('shop-content');
+    this.achievementsList = document.getElementById('achievements-list');
+    this.toastContainer = document.getElementById('toast-container');
+    this.finalDiscsBanked = document.getElementById('final-discs-banked');
     this.restartBtn = document.getElementById('restart-btn');
     this.saveScoreBtn = document.getElementById('save-score-btn');
     this.playerNameInput = document.getElementById('player-name-input');
@@ -59,6 +82,17 @@ class Game {
     this.startHighscoreListEl = document.getElementById('start-highscore-list');
     this.mobileJumpBtn = document.getElementById('mobile-jump-btn');
     this.mobileSlideBtn = document.getElementById('mobile-slide-btn');
+
+    // Metaprogression & Run Statistics
+    this.activeShopTab = 'skins';
+    this.metaState = this.loadMetaState();
+    this.discsCollectedInRun = 0;
+    this.runDoubleJumps = 0;
+    this.runOverdriveKills = 0;
+    this.runHitsTaken = 0;
+    this.runMaxAirCombo = 1.0;
+    this.groundScrollZ = 0;
+    this.foregroundElements = this.generateForegroundElements(4);
 
     // Responsive virtual resolution
     this.vWidth = 960;
@@ -538,6 +572,45 @@ class Game {
       });
     }
 
+    if (this.showShopBtn) {
+      this.showShopBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openShopModal();
+      });
+    }
+
+    if (this.closeShopBtn) {
+      this.closeShopBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeShopModal();
+      });
+    }
+
+    if (this.showAchievementsBtn) {
+      this.showAchievementsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.openAchievementsModal();
+      });
+    }
+
+    if (this.closeAchievementsBtn) {
+      this.closeAchievementsBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.closeAchievementsModal();
+      });
+    }
+
+    const shopTabs = document.querySelectorAll('.shop-tab');
+    shopTabs.forEach(tab => {
+      tab.addEventListener('click', (e) => {
+        e.stopPropagation();
+        shopTabs.forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        this.activeShopTab = tab.dataset.tab;
+        this.renderShopContent();
+      });
+    });
+
     if (this.restartBtn) {
       this.restartBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -598,6 +671,7 @@ class Game {
         soundEngine.playJump();
         this.emitParticles(this.player.x + this.player.width / 2, this.player.y + this.player.height, 8, '#00f0ff');
       } else if (jumpResult === 'DOUBLE_JUMP') {
+        this.runDoubleJumps++;
         soundEngine.playDoubleJump();
         this.emitDoubleJumpRing(this.player.x + this.player.width / 2, this.player.y + this.player.height);
         this.addFloatingText(this.player.x, this.player.y - 15, '2x JUMP!', '#00f0ff');
@@ -615,6 +689,17 @@ class Game {
 
     if (this.state !== 'PLAYING') return;
 
+    // Mid-air Fast-Fall (Down input in air causes accelerated plunge)
+    if (!this.player.isGrounded) {
+      const fastFell = triggerPlayerFastFall(this.player);
+      if (fastFell) {
+        soundEngine.playSlide();
+        this.emitParticles(this.player.x + this.player.width / 2, this.player.y + this.player.height, 12, '#ff007f');
+        this.addFloatingText(this.player.x, this.player.y - 15, 'FAST-FALL!', '#ff007f');
+      }
+      return;
+    }
+
     const slid = triggerPlayerSlide(this.player);
     if (slid) {
       soundEngine.playSlide();
@@ -629,11 +714,18 @@ class Game {
     this.state = 'PLAYING';
     this.startOverlay.classList.add('hidden');
     this.gameOverOverlay.classList.add('hidden');
+    if (this.shopOverlay) this.shopOverlay.classList.add('hidden');
+    if (this.achievementsOverlay) this.achievementsOverlay.classList.add('hidden');
     this.gameTime = 0;
     this.score = 0;
     this.obstaclesCleared = 0;
     this.discs = 0;
     this.totalDiscsCollected = 0;
+    this.discsCollectedInRun = 0;
+    this.runDoubleJumps = 0;
+    this.runOverdriveKills = 0;
+    this.runHitsTaken = 0;
+    this.runMaxAirCombo = 1.0;
     this.airDiscsCount = 0;
     this.spawnTimer = 0.6;
     this.currentSpeed = GAME_CONFIG.BASE_SPEED;
@@ -686,9 +778,42 @@ class Game {
     this.screenShake = 15;
     this.screenFlash = 0.6;
 
+    // Bank collected discs into persistent account
+    this.metaState = bankDiscs(this.metaState, this.discsCollectedInRun);
+    this.metaState.stats.totalRuns++;
+    this.metaState.stats.totalObstaclesCleared += this.obstaclesCleared;
+    if (this.score > this.metaState.stats.highScore) {
+      this.metaState.stats.highScore = this.score;
+    }
+    if (this.runMaxAirCombo > this.metaState.stats.maxAirCombo) {
+      this.metaState.stats.maxAirCombo = this.runMaxAirCombo;
+    }
+
+    // Check achievement milestones
+    const achResult = checkAchievements(this.metaState, {
+      obstaclesCleared: this.obstaclesCleared,
+      doubleJumps: this.runDoubleJumps,
+      maxAirCombo: this.runMaxAirCombo,
+      gameTime: this.gameTime,
+      score: this.score,
+      hitsTaken: this.runHitsTaken,
+      overdriveKills: this.runOverdriveKills,
+      currentSpeed: this.currentSpeed,
+    });
+    this.metaState = achResult.metaState;
+    this.saveMetaState();
+
     if (this.finalScoreEl) {
       this.finalScoreEl.textContent = this.score;
     }
+    if (this.finalDiscsBanked) {
+      this.finalDiscsBanked.textContent = `+${this.discsCollectedInRun}`;
+    }
+
+    achResult.newlyUnlocked.forEach(id => {
+      const ach = ACHIEVEMENTS_CONFIG[id];
+      if (ach) this.showToast(ach.icon, ach.title, ach.desc);
+    });
 
     if (this.playerNameInput) {
       this.playerNameInput.disabled = false;
@@ -702,6 +827,8 @@ class Game {
     this.renderHighscoreList();
     if (this.startOverlay) this.startOverlay.classList.add('hidden');
     if (this.highscoreOverlay) this.highscoreOverlay.classList.add('hidden');
+    if (this.shopOverlay) this.shopOverlay.classList.add('hidden');
+    if (this.achievementsOverlay) this.achievementsOverlay.classList.add('hidden');
     if (this.gameOverOverlay) this.gameOverOverlay.classList.remove('hidden');
 
     setTimeout(() => {
@@ -716,6 +843,8 @@ class Game {
     this.renderStartHighscores();
     if (this.startOverlay) this.startOverlay.classList.add('hidden');
     if (this.gameOverOverlay) this.gameOverOverlay.classList.add('hidden');
+    if (this.shopOverlay) this.shopOverlay.classList.add('hidden');
+    if (this.achievementsOverlay) this.achievementsOverlay.classList.add('hidden');
     if (this.highscoreOverlay) this.highscoreOverlay.classList.remove('hidden');
   }
 
@@ -724,11 +853,287 @@ class Game {
     if (this.startOverlay) this.startOverlay.classList.remove('hidden');
   }
 
+  openShopModal() {
+    this.updateShopBankDisplay();
+    this.renderShopContent();
+    if (this.startOverlay) this.startOverlay.classList.add('hidden');
+    if (this.gameOverOverlay) this.gameOverOverlay.classList.add('hidden');
+    if (this.highscoreOverlay) this.highscoreOverlay.classList.add('hidden');
+    if (this.achievementsOverlay) this.achievementsOverlay.classList.add('hidden');
+    if (this.shopOverlay) this.shopOverlay.classList.remove('hidden');
+  }
+
+  closeShopModal() {
+    if (this.shopOverlay) this.shopOverlay.classList.add('hidden');
+    if (this.startOverlay) this.startOverlay.classList.remove('hidden');
+  }
+
+  openAchievementsModal() {
+    this.renderAchievementsList();
+    if (this.startOverlay) this.startOverlay.classList.add('hidden');
+    if (this.gameOverOverlay) this.gameOverOverlay.classList.add('hidden');
+    if (this.highscoreOverlay) this.highscoreOverlay.classList.add('hidden');
+    if (this.shopOverlay) this.shopOverlay.classList.add('hidden');
+    if (this.achievementsOverlay) this.achievementsOverlay.classList.remove('hidden');
+  }
+
+  closeAchievementsModal() {
+    if (this.achievementsOverlay) this.achievementsOverlay.classList.add('hidden');
+    if (this.startOverlay) this.startOverlay.classList.remove('hidden');
+  }
+
   showStartScreen() {
     this.state = 'START';
     if (this.gameOverOverlay) this.gameOverOverlay.classList.add('hidden');
     if (this.highscoreOverlay) this.highscoreOverlay.classList.add('hidden');
+    if (this.shopOverlay) this.shopOverlay.classList.add('hidden');
+    if (this.achievementsOverlay) this.achievementsOverlay.classList.add('hidden');
     if (this.startOverlay) this.startOverlay.classList.remove('hidden');
+  }
+
+  loadMetaState() {
+    try {
+      const saved = localStorage.getItem('cloudrunner_meta_v2');
+      if (saved) {
+        return migrateMetaState(JSON.parse(saved));
+      }
+    } catch {}
+    return getInitialMetaState();
+  }
+
+  saveMetaState() {
+    try {
+      localStorage.setItem('cloudrunner_meta_v2', JSON.stringify(this.metaState));
+    } catch {}
+    this.updateShopBankDisplay();
+  }
+
+  updateShopBankDisplay() {
+    if (this.shopBankDiscs) {
+      this.shopBankDiscs.textContent = `${this.metaState.bankedDiscs} DISCS`;
+    }
+  }
+
+  getDiscsPerLifeRequirement() {
+    const level = this.metaState.upgrades?.discEfficiency || 0;
+    return [20, 18, 16, 14][level] || 20;
+  }
+
+  showToast(icon, title, desc) {
+    if (!this.toastContainer) return;
+    const toast = document.createElement('div');
+    toast.className = 'cyber-toast';
+    toast.innerHTML = `<span style="font-size: 18px;">${icon}</span> <span><strong>${title}:</strong> ${desc}</span>`;
+    this.toastContainer.appendChild(toast);
+    setTimeout(() => {
+      if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 3200);
+  }
+
+  renderShopContent() {
+    if (!this.shopContent) return;
+    this.shopContent.innerHTML = '';
+
+    if (this.activeShopTab === 'skins') {
+      Object.values(SKIN_CATALOG).forEach(skin => {
+        const isUnlocked = this.metaState.unlockedSkins.includes(skin.id);
+        const isEquipped = this.metaState.selectedSkin === skin.id;
+
+        const card = document.createElement('div');
+        card.className = `shop-item-card ${isEquipped ? 'equipped' : ''}`;
+        card.innerHTML = `
+          <div class="shop-item-info">
+            <span class="shop-item-name">${skin.name}</span>
+            <span class="shop-item-desc">${skin.desc}</span>
+            <span class="shop-item-meta">${isUnlocked ? 'BESITZ' : `${skin.cost} DISCS`}</span>
+          </div>
+          <div class="shop-item-action">
+            ${isEquipped 
+              ? '<button class="shop-btn shop-btn-equipped" disabled>AUSGERÜSTET</button>'
+              : isUnlocked 
+                ? `<button class="shop-btn shop-btn-equip" data-equip-skin="${skin.id}">AUSRÜSTEN</button>`
+                : `<button class="shop-btn shop-btn-buy" data-buy-skin="${skin.id}" ${this.metaState.bankedDiscs < skin.cost ? 'disabled' : ''}>KAUFEN</button>`
+            }
+          </div>
+        `;
+        this.shopContent.appendChild(card);
+      });
+
+      this.shopContent.querySelectorAll('[data-buy-skin]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const res = buyShopSkin(this.metaState, btn.dataset.buySkin);
+          if (res.success) {
+            this.metaState = res.metaState;
+            this.saveMetaState();
+            soundEngine.playMilestone();
+            this.renderShopContent();
+          }
+        });
+      });
+
+      this.shopContent.querySelectorAll('[data-equip-skin]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.metaState.selectedSkin = btn.dataset.equipSkin;
+          this.saveMetaState();
+          soundEngine.playPowerUp();
+          this.renderShopContent();
+        });
+      });
+    } else if (this.activeShopTab === 'trails') {
+      Object.values(TRAIL_CATALOG).forEach(trail => {
+        const isUnlocked = this.metaState.unlockedTrails.includes(trail.id);
+        const isEquipped = this.metaState.selectedTrail === trail.id;
+
+        const card = document.createElement('div');
+        card.className = `shop-item-card ${isEquipped ? 'equipped' : ''}`;
+        card.innerHTML = `
+          <div class="shop-item-info">
+            <span class="shop-item-name">${trail.name}</span>
+            <span class="shop-item-desc">${trail.desc}</span>
+            <span class="shop-item-meta">${isUnlocked ? 'BESITZ' : `${trail.cost} DISCS`}</span>
+          </div>
+          <div class="shop-item-action">
+            ${isEquipped 
+              ? '<button class="shop-btn shop-btn-equipped" disabled>AUSGERÜSTET</button>'
+              : isUnlocked 
+                ? `<button class="shop-btn shop-btn-equip" data-equip-trail="${trail.id}">AUSRÜSTEN</button>`
+                : `<button class="shop-btn shop-btn-buy" data-buy-trail="${trail.id}" ${this.metaState.bankedDiscs < trail.cost ? 'disabled' : ''}>KAUFEN</button>`
+            }
+          </div>
+        `;
+        this.shopContent.appendChild(card);
+      });
+
+      this.shopContent.querySelectorAll('[data-buy-trail]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const res = buyShopTrail(this.metaState, btn.dataset.buyTrail);
+          if (res.success) {
+            this.metaState = res.metaState;
+            this.saveMetaState();
+            soundEngine.playMilestone();
+            this.renderShopContent();
+          }
+        });
+      });
+
+      this.shopContent.querySelectorAll('[data-equip-trail]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          this.metaState.selectedTrail = btn.dataset.equipTrail;
+          this.saveMetaState();
+          soundEngine.playPowerUp();
+          this.renderShopContent();
+        });
+      });
+    } else if (this.activeShopTab === 'upgrades') {
+      Object.values(UPGRADE_CATALOG).forEach(upg => {
+        const currentLevel = this.metaState.upgrades[upg.id] || 0;
+        const isMax = currentLevel >= upg.maxLevel;
+        const nextCost = isMax ? 0 : upg.costs[currentLevel];
+
+        const card = document.createElement('div');
+        card.className = `shop-item-card ${isMax ? 'equipped' : ''}`;
+        card.innerHTML = `
+          <div class="shop-item-info">
+            <span class="shop-item-name">${upg.name} (${currentLevel}/${upg.maxLevel})</span>
+            <span class="shop-item-desc">${upg.desc}</span>
+            <span class="shop-item-meta">${isMax ? 'MAX LEVEL' : `KOSTEN: ${nextCost} DISCS`}</span>
+          </div>
+          <div class="shop-item-action">
+            ${isMax 
+              ? '<button class="shop-btn shop-btn-equipped" disabled>MAX</button>'
+              : `<button class="shop-btn shop-btn-buy" data-buy-upgrade="${upg.id}" ${this.metaState.bankedDiscs < nextCost ? 'disabled' : ''}>UPGRADE</button>`
+            }
+          </div>
+        `;
+        this.shopContent.appendChild(card);
+      });
+
+      this.shopContent.querySelectorAll('[data-buy-upgrade]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const res = buyUpgrade(this.metaState, btn.dataset.buyUpgrade);
+          if (res.success) {
+            this.metaState = res.metaState;
+            this.saveMetaState();
+            soundEngine.playMilestone();
+            this.renderShopContent();
+          }
+        });
+      });
+    }
+  }
+
+  renderAchievementsList() {
+    if (!this.achievementsList) return;
+    this.achievementsList.innerHTML = '';
+
+    Object.values(ACHIEVEMENTS_CONFIG).forEach(ach => {
+      const isUnlocked = !!this.metaState.achievements[ach.id];
+      const card = document.createElement('div');
+      card.className = `achievement-card ${isUnlocked ? 'unlocked' : ''}`;
+      card.innerHTML = `
+        <div class="achievement-icon">${ach.icon}</div>
+        <div class="achievement-info">
+          <div class="achievement-title">${ach.title}</div>
+          <div class="achievement-desc">${ach.desc}</div>
+        </div>
+        <div class="achievement-status ${isUnlocked ? 'neon-yellow' : 'neon-cyan'}">
+          ${isUnlocked ? 'FREIGESCHALTET ✓' : 'GESPERRT'}
+        </div>
+      `;
+      this.achievementsList.appendChild(card);
+    });
+  }
+
+  generateForegroundElements(count = 4) {
+    const list = [];
+    for (let i = 0; i < count; i++) {
+      list.push({
+        x: i * 360 + 100,
+        type: i % 2 === 0 ? 'LIGHT_POLE' : 'SIGN_GANTRY',
+        height: 140 + (i % 2) * 50,
+      });
+    }
+    return list;
+  }
+
+  updateForegroundElements(dt, speed) {
+    const fgSpeed = speed * 1.45;
+    this.foregroundElements.forEach(item => {
+      item.x -= fgSpeed * dt;
+      if (item.x < -150) {
+        item.x = this.vWidth + 150 + Math.random() * 80;
+      }
+    });
+  }
+
+  renderForegroundElements() {
+    this.ctx.save();
+    this.foregroundElements.forEach(item => {
+      if (item.x > -150 && item.x < this.vWidth + 150) {
+        this.ctx.fillStyle = '#06040d';
+        if (item.type === 'LIGHT_POLE') {
+          this.ctx.fillRect(item.x, this.groundY - item.height, 8, item.height);
+          this.ctx.fillRect(item.x - 18, this.groundY - item.height, 26, 6);
+          this.ctx.fillStyle = '#ffe600';
+          this.ctx.shadowColor = '#ffe600';
+          this.ctx.shadowBlur = 14;
+          this.ctx.fillRect(item.x - 16, this.groundY - item.height + 6, 10, 4);
+        } else {
+          this.ctx.fillRect(item.x, this.groundY - item.height, 10, item.height);
+          this.ctx.fillRect(item.x - 30, this.groundY - item.height, 60, 10);
+          this.ctx.fillStyle = '#ff007f';
+          this.ctx.shadowColor = '#ff007f';
+          this.ctx.shadowBlur = 12;
+          this.ctx.fillRect(item.x - 22, this.groundY - item.height + 10, 44, 4);
+        }
+      }
+    });
+    this.ctx.restore();
   }
 
   /* ------------------- HIGHSCORES ------------------- */
@@ -875,8 +1280,27 @@ class Game {
   spawnPowerUp(x, y, type = null) {
     const pu = this.powerUpPool.find(p => !p.active);
     if (!pu) return;
-    const types = [GAME_CONFIG.POWERUP_TYPES.SHIELD, GAME_CONFIG.POWERUP_TYPES.MAGNET, GAME_CONFIG.POWERUP_TYPES.OVERDRIVE];
-    pu.type = type || types[Math.floor(Math.random() * types.length)];
+
+    if (type) {
+      pu.type = type;
+    } else {
+      const shieldLvl = (this.metaState && this.metaState.upgrades && this.metaState.upgrades.shieldBoost) || 0;
+      // Base weight: 1.0 each. Upgrades boost shield appearance chance
+      const shieldWeight = 1.0 + shieldLvl * 0.45;
+      const magnetWeight = 1.0;
+      const overdriveWeight = 1.0;
+      const totalWeight = shieldWeight + magnetWeight + overdriveWeight;
+      const roll = Math.random() * totalWeight;
+
+      if (roll < shieldWeight) {
+        pu.type = GAME_CONFIG.POWERUP_TYPES.SHIELD;
+      } else if (roll < shieldWeight + magnetWeight) {
+        pu.type = GAME_CONFIG.POWERUP_TYPES.MAGNET;
+      } else {
+        pu.type = GAME_CONFIG.POWERUP_TYPES.OVERDRIVE;
+      }
+    }
+
     pu.active = true;
     pu.x = x;
     pu.y = y;
@@ -1141,6 +1565,36 @@ class Game {
       this.currentSpeed += GAME_CONFIG.OVERDRIVE_SPEED_BOOST;
     }
 
+    // Dynamic music updates
+    soundEngine.updateMusicDynamics({
+      speed: this.currentSpeed,
+      minSpeed: GAME_CONFIG.BASE_SPEED,
+      maxSpeed: GAME_CONFIG.MAX_SPEED + GAME_CONFIG.OVERDRIVE_SPEED_BOOST,
+      lives: this.player.lives,
+      isOverdrive: this.powerUpState.overdriveTimer > 0,
+    });
+
+    // Real-time achievement checks for survival & speed
+    if (this.gameTime >= 90 && !this.metaState.achievements.NIGHT_RUNNER) {
+      const ach = checkAchievements(this.metaState, { gameTime: this.gameTime });
+      this.metaState = ach.metaState;
+      this.saveMetaState();
+      ach.newlyUnlocked.forEach(id => {
+        const a = ACHIEVEMENTS_CONFIG[id];
+        if (a) this.showToast(a.icon, a.title, a.desc);
+      });
+    }
+
+    if (this.currentSpeed >= GAME_CONFIG.MAX_SPEED && !this.metaState.achievements.SPEED_DEMON) {
+      const ach = checkAchievements(this.metaState, { currentSpeed: this.currentSpeed });
+      this.metaState = ach.metaState;
+      this.saveMetaState();
+      ach.newlyUnlocked.forEach(id => {
+        const a = ACHIEVEMENTS_CONFIG[id];
+        if (a) this.showToast(a.icon, a.title, a.desc);
+      });
+    }
+
     // Update Player Physics with Platforms and Chasms
     const wasGrounded = this.player.isGrounded;
     updatePlayerPhysics(this.player, dt, this.groundY, this.activePlatforms, this.activeChasms);
@@ -1151,8 +1605,19 @@ class Game {
         const mult = calculateAirComboMultiplier(this.airDiscsCount);
         const bonus = calculateAirComboBonus(this.airDiscsCount);
         this.score += bonus;
+        this.runMaxAirCombo = Math.max(this.runMaxAirCombo, mult);
         soundEngine.playCombo();
         this.addFloatingText(this.player.x + 20, this.player.y - 25, `COMBO x${mult.toFixed(1)}! +${bonus} PTS`, '#ff007f');
+
+        if (mult >= 3.0 && !this.metaState.achievements.AIR_ACROBAT) {
+          const ach = checkAchievements(this.metaState, { maxAirCombo: mult });
+          this.metaState = ach.metaState;
+          this.saveMetaState();
+          ach.newlyUnlocked.forEach(id => {
+            const a = ACHIEVEMENTS_CONFIG[id];
+            if (a) this.showToast(a.icon, a.title, a.desc);
+          });
+        }
       }
       this.airDiscsCount = 0;
       if (this.hudCombo) this.hudCombo.classList.add('hidden');
@@ -1266,6 +1731,16 @@ class Game {
         this.obstaclesCleared++;
         this.addFloatingText(obs.x + 10, obs.y - 10, `+${GAME_CONFIG.OBSTACLE_CLEAR_BONUS}`, '#ffe600');
 
+        if (this.obstaclesCleared === 1 && !this.metaState.achievements.FIRST_BLOOD) {
+          const ach = checkAchievements(this.metaState, { obstaclesCleared: 1 });
+          this.metaState = ach.metaState;
+          this.saveMetaState();
+          ach.newlyUnlocked.forEach(id => {
+            const a = ACHIEVEMENTS_CONFIG[id];
+            if (a) this.showToast(a.icon, a.title, a.desc);
+          });
+        }
+
         if (this.obstaclesCleared % 10 === 0) {
           soundEngine.playMilestone();
           this.addFloatingText(this.player.x + 30, this.player.y - 30, 'STREAK x10!', '#ff007f');
@@ -1277,10 +1752,21 @@ class Game {
         if (this.powerUpState.overdriveTimer > 0) {
           obs.active = false;
           this.activeObstacles.splice(i, 1);
+          this.runOverdriveKills++;
           soundEngine.playHurt();
           this.emitParticles(obs.x + obs.width / 2, obs.y + obs.height / 2, 22, '#ff007f');
           this.addFloatingText(obs.x + 10, obs.y - 10, 'SMASHED! +50', '#ffe600');
           this.score += 50;
+
+          if (this.runOverdriveKills >= 3 && !this.metaState.achievements.OVERDRIVE_RAMPAGE) {
+            const ach = checkAchievements(this.metaState, { overdriveKills: this.runOverdriveKills });
+            this.metaState = ach.metaState;
+            this.saveMetaState();
+            ach.newlyUnlocked.forEach(id => {
+              const a = ACHIEVEMENTS_CONFIG[id];
+              if (a) this.showToast(a.icon, a.title, a.desc);
+            });
+          }
         } else if (this.powerUpState.shield) {
           this.powerUpState.shield = false;
           this.player.invulnerabilityTimer = 1.0;
@@ -1338,6 +1824,7 @@ class Game {
     disc.active = false;
     this.activeDiscs.splice(index, 1);
     this.totalDiscsCollected++;
+    this.discsCollectedInRun++;
 
     // Track air combo
     if (!this.player.isGrounded) {
@@ -1354,8 +1841,9 @@ class Game {
     soundEngine.playDiscPickup();
     this.emitParticles(disc.x + disc.width / 2, disc.y + disc.height / 2, 10, '#ffe600');
 
-    // Update disc counter & handle extra life (cap 5)
-    const result = updateDiscCollection(this.discs, this.player.lives, GAME_CONFIG.MAX_LIVES, GAME_CONFIG.DISCS_PER_EXTRA_LIFE);
+    // Update disc counter & handle extra life (respecting discEfficiency perk)
+    const req = this.getDiscsPerLifeRequirement();
+    const result = updateDiscCollection(this.discs, this.player.lives, GAME_CONFIG.MAX_LIVES, req);
     this.discs = result.discs;
     this.player.lives = result.lives;
 
@@ -1374,19 +1862,25 @@ class Game {
     pu.active = false;
     this.activePowerUps.splice(index, 1);
 
-    applyPowerUp(this.powerUpState, pu.type);
-    soundEngine.playPowerUp();
-
+    let dur = GAME_CONFIG.POWERUP_DURATIONS[pu.type];
     let color = '#00f0ff';
     let text = '+SHIELD!';
     if (pu.type === GAME_CONFIG.POWERUP_TYPES.MAGNET) {
+      dur += (this.metaState?.upgrades?.magnetDuration || 0) * 1.0;
       color = '#ffe600';
-      text = '+MAGNET (8s)!';
+      text = `+MAGNET (${dur.toFixed(1)}s)!`;
     } else if (pu.type === GAME_CONFIG.POWERUP_TYPES.OVERDRIVE) {
+      dur += (this.metaState?.upgrades?.overdriveBoost || 0) * 0.6;
       color = '#ff007f';
-      text = '+OVERDRIVE (4.5s)!';
+      text = `+OVERDRIVE (${dur.toFixed(1)}s)!`;
       this.screenFlash = 0.35;
     }
+
+    applyPowerUp(this.powerUpState, pu.type, {
+      magnetDuration: dur,
+      overdriveDuration: dur,
+    });
+    soundEngine.playPowerUp();
 
     this.emitParticles(pu.x + pu.width / 2, pu.y + pu.height / 2, 22, color);
     this.addFloatingText(this.player.x, this.player.y - 30, text, color);
@@ -1395,6 +1889,7 @@ class Game {
 
   handlePlayerHit(obs, isChasm = false) {
     this.player.lives--;
+    this.runHitsTaken++;
     this.player.invulnerabilityTimer = GAME_CONFIG.INVULNERABILITY_DURATION;
     this.screenShake = 14;
     this.screenFlash = 0.55;
@@ -1412,12 +1907,15 @@ class Game {
     this.distantScrollX = (this.distantScrollX + speed * 0.12 * dt) % this.distantLayer.width;
     this.midScrollX = (this.midScrollX + speed * 0.40 * dt) % this.midLayer.width;
     this.groundScrollX = (this.groundScrollX + speed * dt) % 60;
+    this.groundScrollZ = (this.groundScrollZ + (speed / 240) * dt) % 1.0;
 
     this.flyingCars.forEach(car => {
       car.x += car.speed * dt;
       if (car.speed > 0 && car.x > this.vWidth + 100) car.x = -100;
       if (car.speed < 0 && car.x < -100) car.x = this.vWidth + 100;
     });
+
+    this.updateForegroundElements(dt, speed);
   }
 
   /* ------------------- RENDERING ------------------- */
@@ -1471,6 +1969,9 @@ class Game {
       this.ctx.fillStyle = `rgba(255, 0, 80, ${this.screenFlash * 0.4})`;
       this.ctx.fillRect(0, 0, this.vWidth, this.vHeight);
     }
+
+    // 11.1 Foreground Cyber-Elements (Poles, Overhead Signs)
+    this.renderForegroundElements();
 
     // 12. Vignette & Scanlines
     this.renderVignetteAndScanlines();
@@ -1605,6 +2106,27 @@ class Game {
     this.ctx.fillStyle = groundGrad;
     this.ctx.fillRect(0, this.groundY, this.vWidth, this.vHeight - this.groundY);
 
+    // 1.1 Wet Street Sheen & Neon Puddle Reflections
+    const wetSheen = this.ctx.createLinearGradient(0, this.groundY, 0, this.groundY + 36);
+    wetSheen.addColorStop(0, `rgba(0, 240, 255, ${0.16 * Math.max(0.3, neonIntensity)})`);
+    wetSheen.addColorStop(0.3, `rgba(255, 0, 127, ${0.10 * Math.max(0.3, neonIntensity)})`);
+    wetSheen.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    this.ctx.fillStyle = wetSheen;
+    this.ctx.fillRect(0, this.groundY, this.vWidth, 36);
+
+    for (let p = 0; p < 4; p++) {
+      const px = ((p * 270) - (this.distantScrollX * 1.6)) % (this.vWidth + 240);
+      const puddleX = px < -100 ? px + this.vWidth + 240 : px;
+      if (!this.activeChasms.some(c => puddleX >= c.x - 25 && puddleX <= c.x + c.width + 25)) {
+        this.ctx.save();
+        this.ctx.fillStyle = (p % 2 === 0) ? 'rgba(0, 240, 255, 0.18)' : 'rgba(255, 0, 127, 0.15)';
+        this.ctx.beginPath();
+        this.ctx.ellipse(puddleX, this.groundY + 12 + (p * 5), 36, 4, 0, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
+      }
+    }
+
     // 2. Draw Active Chasms (Deep Abyss Voids)
     this.activeChasms.forEach(chasm => {
       this.ctx.save();
@@ -1647,14 +2169,6 @@ class Game {
     this.ctx.shadowColor = '#00f0ff';
     this.ctx.shadowBlur = 12 * Math.max(0.3, neonIntensity);
 
-    // Magenta secondary line
-    const mgStroke = () => {
-      this.ctx.strokeStyle = '#ff007f';
-      this.ctx.lineWidth = 1.5;
-      this.ctx.shadowColor = '#ff007f';
-      this.ctx.shadowBlur = 8 * neonIntensity;
-    };
-
     let curX = 0;
     const sortedChasms = [...this.activeChasms].sort((a, b) => a.x - b.x);
 
@@ -1676,19 +2190,48 @@ class Game {
     }
     this.ctx.restore();
 
-    // Moving Cyber-Grid perspective lines (only on solid ground)
+    // 4. 3D Perspective Outrun Grid - Horizontal Forward-Rolling Lines
+    const gridDepthH = this.vHeight - this.groundY;
+    for (let k = 0; k < 8; k++) {
+      const prog = ((k / 8) + this.groundScrollZ) % 1.0;
+      const lineY = this.groundY + Math.pow(prog, 2.2) * gridDepthH;
+      const alpha = Math.min(0.65, Math.pow(prog, 1.2) * (0.15 + 0.45 * neonIntensity));
+
+      this.ctx.save();
+      this.ctx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
+      this.ctx.lineWidth = 1 + prog * 1.5;
+
+      let lineCurX = 0;
+      sortedChasms.forEach(chasm => {
+        if (chasm.x > lineCurX) {
+          this.ctx.beginPath();
+          this.ctx.moveTo(lineCurX, lineY);
+          this.ctx.lineTo(chasm.x, lineY);
+          this.ctx.stroke();
+        }
+        lineCurX = Math.max(lineCurX, chasm.x + chasm.width);
+      });
+      if (lineCurX < this.vWidth) {
+        this.ctx.beginPath();
+        this.ctx.moveTo(lineCurX, lineY);
+        this.ctx.lineTo(this.vWidth, lineY);
+        this.ctx.stroke();
+      }
+      this.ctx.restore();
+    }
+
+    // 5. 3D Perspective Outrun Grid - Fanned Longitudinal Lines
     this.ctx.save();
-    this.ctx.strokeStyle = `rgba(0, 240, 255, ${0.15 + 0.3 * neonIntensity})`;
+    this.ctx.strokeStyle = `rgba(0, 240, 255, ${0.12 + 0.25 * neonIntensity})`;
     this.ctx.lineWidth = 1.5;
 
-    for (let x = -60; x < this.vWidth + 60; x += 40) {
+    for (let x = -80; x < this.vWidth + 80; x += 45) {
       const lineX = x - this.groundScrollX;
-      // Skip if line is inside a chasm
       const inChasm = this.activeChasms.some(c => lineX >= c.x - 10 && lineX <= c.x + c.width + 10);
       if (!inChasm) {
         this.ctx.beginPath();
         this.ctx.moveTo(lineX, this.groundY);
-        this.ctx.lineTo(lineX - 35, this.vHeight);
+        this.ctx.lineTo(lineX - 40, this.vHeight);
         this.ctx.stroke();
       }
     }
@@ -1846,16 +2389,65 @@ class Game {
   renderPlayer() {
     const p = this.player;
     const { neonIntensity } = this.currentLighting;
+    const skinCfg = SKIN_CATALOG[this.metaState?.selectedSkin] || SKIN_CATALOG.DEFAULT;
+    const trailCfg = TRAIL_CATALOG[this.metaState?.selectedTrail] || TRAIL_CATALOG.CYAN;
 
     if (p.invulnerabilityTimer > 0) {
       const flash = Math.sin(p.invulnerabilityTimer * 25) > 0;
       if (!flash) return;
     }
 
+    // ----------------- SURFACE DROP SHADOW -----------------
+    // Project shadow onto the nearest ground surface or elevated platform below player
+    let groundBelowY = this.groundY;
+    const pMidX = p.x + p.width / 2;
+    let overChasm = false;
+    for (const chasm of this.activeChasms) {
+      if (pMidX >= chasm.x && pMidX <= chasm.x + chasm.width) {
+        overChasm = true;
+        break;
+      }
+    }
+    if (overChasm) {
+      groundBelowY = this.vHeight + 200; // No ground shadow when directly over chasm pit
+    }
+
+    // Check elevated platforms below feet
+    for (const plat of this.activePlatforms) {
+      if (p.x + p.width * 0.8 > plat.x && p.x + p.width * 0.2 < plat.x + plat.width) {
+        if (plat.y >= p.y + p.height - 4 && plat.y < groundBelowY) {
+          groundBelowY = plat.y;
+        }
+      }
+    }
+
+    const shadowDist = groundBelowY - (p.y + p.height);
+    if (shadowDist >= -4 && shadowDist < 260) {
+      const normDist = Math.max(0, shadowDist) / 260;
+      const shadowW = Math.max(8, (p.width * 0.72) * (1 - normDist * 0.55));
+      const shadowH = Math.max(2, 5 * (1 - normDist * 0.55));
+      const shadowAlpha = (1 - normDist) * 0.42;
+
+      this.ctx.save();
+      // Dark ground shadow
+      this.ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`;
+      this.ctx.beginPath();
+      this.ctx.ellipse(p.x + p.width / 2, groundBelowY, shadowW, shadowH, 0, 0, Math.PI * 2);
+      this.ctx.fill();
+
+      // Subtle wet ground neon sheen from player suit
+      this.ctx.fillStyle = skinCfg.primaryColor;
+      this.ctx.globalAlpha = shadowAlpha * 0.3;
+      this.ctx.beginPath();
+      this.ctx.ellipse(p.x + p.width / 2, groundBelowY, shadowW * 0.65, shadowH * 0.6, 0, 0, Math.PI * 2);
+      this.ctx.fill();
+      this.ctx.restore();
+    }
+
     this.ctx.save();
     this.ctx.translate(p.x, p.y);
 
-    // Power-Up Auras behind player
+    // ----------------- POWER-UP AURAS -----------------
     if (this.powerUpState.shield) {
       this.ctx.save();
       this.ctx.strokeStyle = '#00f0ff';
@@ -1873,16 +2465,21 @@ class Game {
     if (this.powerUpState.overdriveTimer > 0) {
       this.ctx.save();
       this.ctx.strokeStyle = '#ff007f';
-      this.ctx.lineWidth = 2;
+      this.ctx.lineWidth = 2.5;
       this.ctx.shadowColor = '#ff007f';
-      this.ctx.shadowBlur = 18;
+      this.ctx.shadowBlur = 20;
       this.ctx.strokeRect(-4, -4, p.width + 8, p.height + 8);
+      // Sparks
+      this.ctx.fillStyle = '#ffffff';
+      const sparkX = Math.random() * (p.width + 8) - 4;
+      const sparkY = Math.random() * (p.height + 8) - 4;
+      this.ctx.fillRect(sparkX, sparkY, 2, 2);
       this.ctx.restore();
     }
 
     if (this.powerUpState.magnetTimer > 0) {
       this.ctx.save();
-      this.ctx.strokeStyle = 'rgba(255, 230, 0, 0.7)';
+      this.ctx.strokeStyle = 'rgba(255, 230, 0, 0.75)';
       this.ctx.lineWidth = 1.5;
       this.ctx.setLineDash([4, 4]);
       this.ctx.beginPath();
@@ -1891,84 +2488,193 @@ class Game {
       this.ctx.restore();
     }
 
-    // Neon Motion Trail
+    // ----------------- EQUIPPED TRAIL EFFECTS -----------------
     if (p.trail.length > 2) {
       this.ctx.save();
       for (let i = 0; i < p.trail.length; i++) {
         const t = p.trail[i];
-        const alpha = (i / p.trail.length) * (this.powerUpState.overdriveTimer > 0 ? 0.6 : 0.3);
-        const trailColor = this.powerUpState.overdriveTimer > 0 ? '#ff007f' : '#00f0ff';
+        const alpha = (i / p.trail.length) * (this.powerUpState.overdriveTimer > 0 ? 0.65 : 0.35);
+        let trailColor;
+        if (this.powerUpState.overdriveTimer > 0) {
+          trailColor = '#ff007f';
+        } else if (trailCfg.id === 'RAINBOW') {
+          const hue = Math.floor((this.gameTime * 240 + i * 36) % 360);
+          trailColor = `hsl(${hue}, 100%, 65%)`;
+        } else if (trailCfg.id === 'MATRIX') {
+          trailColor = '#00ff66';
+        } else {
+          trailColor = trailCfg.color || skinCfg.primaryColor;
+        }
+
         this.ctx.fillStyle = trailColor;
         this.ctx.globalAlpha = alpha;
-        this.ctx.fillRect(t.x - p.x, t.y - p.y + (p.isSliding ? 4 : 10), p.width, p.height - (p.isSliding ? 8 : 15));
+        this.ctx.shadowColor = trailColor;
+        this.ctx.shadowBlur = 8;
+
+        const relX = t.x - p.x;
+        const relY = t.y - p.y;
+        const boxH = p.height - (p.isSliding ? 8 : 16);
+        const boxY = relY + (p.isSliding ? 4 : 10);
+
+        if (trailCfg.id === 'MATRIX' && this.powerUpState.overdriveTimer <= 0) {
+          this.ctx.fillRect(relX, boxY, p.width * 0.85, boxH);
+          if (i % 2 === 0) {
+            this.ctx.fillRect(relX + ((i * 7) % 20), boxY - 3, 3, 3);
+            this.ctx.fillRect(relX + ((i * 11) % 22), boxY + boxH + 1, 3, 3);
+          }
+        } else {
+          this.ctx.fillRect(relX, boxY, p.width, boxH);
+        }
       }
       this.ctx.restore();
     }
 
     if (p.isSliding) {
       // ----------------- SLIDING POSE -----------------
-      // Scarf trailing flat behind
-      this.ctx.fillStyle = '#ff007f';
-      this.ctx.shadowColor = '#ff007f';
+      // Dynamic Bézier Scarf trailing behind
+      this.ctx.fillStyle = skinCfg.accentColor;
+      this.ctx.shadowColor = skinCfg.accentColor;
       this.ctx.shadowBlur = 6 * neonIntensity;
       const flap = Math.sin(this.player.runFrame * 4) * 3;
       this.ctx.beginPath();
       this.ctx.moveTo(4, 14);
-      this.ctx.lineTo(-20, 10 + flap);
-      this.ctx.lineTo(-16, 18 + flap);
-      this.ctx.lineTo(4, 18);
+      this.ctx.quadraticCurveTo(-12, 11 + flap * 0.4, -22, 10 + flap);
+      this.ctx.lineTo(-18, 18 + flap);
+      this.ctx.quadraticCurveTo(-6, 17, 4, 18);
       this.ctx.closePath();
       this.ctx.fill();
 
+      // Shinobi Katana on back during slide
+      if (skinCfg.id === 'SHINOBI') {
+        this.ctx.save();
+        this.ctx.strokeStyle = '#020617';
+        this.ctx.lineWidth = 3;
+        this.ctx.beginPath();
+        this.ctx.moveTo(-2, 8);
+        this.ctx.lineTo(24, 16);
+        this.ctx.stroke();
+
+        this.ctx.strokeStyle = '#00ff88';
+        this.ctx.lineWidth = 1;
+        this.ctx.shadowColor = '#00ff88';
+        this.ctx.shadowBlur = 6;
+        this.ctx.beginPath();
+        this.ctx.moveTo(-1, 9);
+        this.ctx.lineTo(23, 17);
+        this.ctx.stroke();
+        this.ctx.restore();
+      }
+
       // Lower body / sliding legs extended forward
-      this.ctx.fillStyle = '#1e1c2e';
+      this.ctx.fillStyle = skinCfg.id === 'CHROME' ? '#334155' : skinCfg.suitColor;
       this.ctx.fillRect(14, 16, 24, 8);
 
       // Boots sliding on asphalt
-      this.ctx.fillStyle = '#2d2a45';
+      this.ctx.fillStyle = skinCfg.id === 'CHROME' ? '#64748b' : '#2d2a45';
       this.ctx.fillRect(28, 16, 12, 9);
-      this.ctx.fillStyle = '#00f0ff';
-      this.ctx.shadowColor = '#00f0ff';
+      this.ctx.fillStyle = skinCfg.primaryColor;
+      this.ctx.shadowColor = skinCfg.primaryColor;
       this.ctx.shadowBlur = 8;
-      this.ctx.fillRect(28, 23, 14, 3); // Neon glowing boot sole
+      this.ctx.fillRect(28, 23, 14, 3); // Glowing boot sole
 
-      // Torso / low profile cyber jacket
-      this.ctx.fillStyle = '#111022';
+      // Torso / cyber jacket
+      if (skinCfg.id === 'CHROME') {
+        const cg = this.ctx.createLinearGradient(4, 10, 24, 24);
+        cg.addColorStop(0, '#f1f5f9');
+        cg.addColorStop(0.5, '#94a3b8');
+        cg.addColorStop(1, '#475569');
+        this.ctx.fillStyle = cg;
+      } else {
+        this.ctx.fillStyle = skinCfg.suitColor;
+      }
       this.ctx.fillRect(4, 10, 20, 14);
-      this.ctx.fillStyle = '#ffe600';
+
+      // Accent stripe / zipper
+      this.ctx.fillStyle = skinCfg.accentColor;
       this.ctx.fillRect(10, 12, 12, 3);
 
       // Head & Helmet tilted forward
-      this.ctx.fillStyle = '#1f1d36';
+      if (skinCfg.id === 'CHROME') {
+        const hg = this.ctx.createLinearGradient(16, 2, 32, 14);
+        hg.addColorStop(0, '#ffffff');
+        hg.addColorStop(0.5, '#cbd5e1');
+        hg.addColorStop(1, '#64748b');
+        this.ctx.fillStyle = hg;
+      } else if (skinCfg.id === 'SHINOBI') {
+        this.ctx.fillStyle = '#050811';
+      } else {
+        this.ctx.fillStyle = '#1f1d36';
+      }
       this.ctx.fillRect(16, 2, 16, 12);
 
-      // Glowing Neon Cyber Visor
-      this.ctx.fillStyle = '#00f0ff';
-      this.ctx.shadowColor = '#00f0ff';
-      this.ctx.shadowBlur = 12;
-      this.ctx.fillRect(24, 4, 10, 4);
+      // Glowing Cyber Visor / Shades
+      if (skinCfg.id === 'OUTRUN') {
+        const sg = this.ctx.createLinearGradient(24, 4, 34, 8);
+        sg.addColorStop(0, '#ffaa00');
+        sg.addColorStop(1, '#ff007f');
+        this.ctx.fillStyle = sg;
+        this.ctx.shadowColor = '#ffaa00';
+        this.ctx.shadowBlur = 10;
+        this.ctx.fillRect(24, 4, 10, 4);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        this.ctx.fillRect(25, 4, 8, 1);
+      } else {
+        this.ctx.fillStyle = skinCfg.primaryColor;
+        this.ctx.shadowColor = skinCfg.primaryColor;
+        this.ctx.shadowBlur = 12;
+        this.ctx.fillRect(24, 4, 10, 4);
+      }
 
       // Thruster boost while sliding
-      this.ctx.fillStyle = '#ff007f';
-      this.ctx.shadowColor = '#ff007f';
+      this.ctx.fillStyle = skinCfg.primaryColor;
+      this.ctx.shadowColor = skinCfg.primaryColor;
       this.ctx.shadowBlur = 12;
       this.ctx.beginPath();
       this.ctx.arc(2, 22, 3, 0, Math.PI * 2);
       this.ctx.fill();
     } else {
       // ----------------- STANDING / RUNNING POSE -----------------
-      // Scarf / Trenchcoat Tails
-      this.ctx.fillStyle = '#ff007f';
-      this.ctx.shadowColor = '#ff007f';
+      // Dynamic Bézier Scarf / Trenchcoat tails responding to player.vy
+      this.ctx.fillStyle = skinCfg.accentColor;
+      this.ctx.shadowColor = skinCfg.accentColor;
       this.ctx.shadowBlur = 6 * neonIntensity;
-      const flap = Math.sin(this.player.runFrame * 3) * 6;
+      const vyDeflect = Math.max(-20, Math.min(22, -p.vy * 0.035));
+      const flap = Math.sin(this.gameTime * 14 + this.player.runFrame * 2) * 4;
+
       this.ctx.beginPath();
-      this.ctx.moveTo(8, 26);
-      this.ctx.lineTo(-18, 30 + flap);
-      this.ctx.lineTo(-24, 42 + flap);
-      this.ctx.lineTo(6, 38);
+      this.ctx.moveTo(8, 24);
+      this.ctx.quadraticCurveTo(-6, 22 + vyDeflect * 0.4, -20, 26 + vyDeflect + flap);
+      this.ctx.lineTo(-26, 38 + vyDeflect + flap * 0.8);
+      this.ctx.quadraticCurveTo(-8, 36 + vyDeflect * 0.5, 6, 38);
       this.ctx.closePath();
       this.ctx.fill();
+
+      // Shinobi Katana on back
+      if (skinCfg.id === 'SHINOBI') {
+        this.ctx.save();
+        this.ctx.strokeStyle = '#020617';
+        this.ctx.lineWidth = 3.5;
+        this.ctx.beginPath();
+        this.ctx.moveTo(-2, 10);
+        this.ctx.lineTo(24, 38);
+        this.ctx.stroke();
+
+        this.ctx.fillStyle = '#eab308';
+        this.ctx.fillRect(2, 13, 5, 2.5);
+
+        this.ctx.strokeStyle = '#00ff88';
+        this.ctx.lineWidth = 1;
+        this.ctx.shadowColor = '#00ff88';
+        this.ctx.shadowBlur = 6;
+        this.ctx.beginPath();
+        this.ctx.moveTo(-1, 11);
+        this.ctx.lineTo(23, 37);
+        this.ctx.stroke();
+
+        this.ctx.fillStyle = '#10b981';
+        this.ctx.fillRect(-6, 6, 4, 6);
+        this.ctx.restore();
+      }
 
       // Legs & Running Animation
       const legPhase = p.isGrounded ? this.player.runFrame : 2;
@@ -1976,41 +2682,85 @@ class Game {
       const l2Offset = Math.sin(legPhase + Math.PI) * 12;
 
       // Back leg
-      this.ctx.fillStyle = '#1e1c2e';
+      this.ctx.fillStyle = skinCfg.id === 'CHROME' ? '#334155' : skinCfg.suitColor;
       this.ctx.fillRect(10 + l2Offset, 36, 6, 20);
-      this.ctx.fillStyle = '#00f0ff';
+      this.ctx.fillStyle = skinCfg.primaryColor;
       this.ctx.fillRect(10 + l2Offset, 52, 10, 4);
 
       // Front leg
-      this.ctx.fillStyle = '#2d2a45';
+      this.ctx.fillStyle = skinCfg.id === 'CHROME' ? '#475569' : '#2d2a45';
       this.ctx.fillRect(18 + l1Offset, 36, 6, 20);
-      this.ctx.fillStyle = '#00f0ff';
+      this.ctx.fillStyle = skinCfg.primaryColor;
       this.ctx.fillRect(18 + l1Offset, 52, 10, 4);
 
       // Torso / Cyber Jacket
-      this.ctx.fillStyle = '#111022';
+      if (skinCfg.id === 'CHROME') {
+        const cg = this.ctx.createLinearGradient(8, 16, 30, 38);
+        cg.addColorStop(0, '#f8fafc');
+        cg.addColorStop(0.4, '#94a3b8');
+        cg.addColorStop(0.8, '#cbd5e1');
+        cg.addColorStop(1, '#475569');
+        this.ctx.fillStyle = cg;
+      } else {
+        this.ctx.fillStyle = skinCfg.suitColor;
+      }
       this.ctx.fillRect(8, 16, 22, 22);
 
-      this.ctx.fillStyle = '#ffe600';
+      // Outrun retro grid detail on jacket
+      if (skinCfg.id === 'OUTRUN') {
+        this.ctx.strokeStyle = 'rgba(217, 70, 239, 0.45)';
+        this.ctx.lineWidth = 1;
+        this.ctx.beginPath();
+        this.ctx.moveTo(8, 27);
+        this.ctx.lineTo(30, 27);
+        this.ctx.moveTo(19, 16);
+        this.ctx.lineTo(19, 38);
+        this.ctx.stroke();
+      }
+
+      // Zipper / Accent stripe
+      this.ctx.fillStyle = skinCfg.accentColor;
       this.ctx.fillRect(14, 18, 3, 16);
 
       // Head & Helmet
-      this.ctx.fillStyle = '#1f1d36';
+      if (skinCfg.id === 'CHROME') {
+        const hg = this.ctx.createLinearGradient(12, 2, 30, 16);
+        hg.addColorStop(0, '#ffffff');
+        hg.addColorStop(0.5, '#cbd5e1');
+        hg.addColorStop(1, '#64748b');
+        this.ctx.fillStyle = hg;
+      } else if (skinCfg.id === 'SHINOBI') {
+        this.ctx.fillStyle = '#050811';
+      } else {
+        this.ctx.fillStyle = '#1f1d36';
+      }
       this.ctx.fillRect(12, 2, 18, 14);
 
-      // Glowing Neon Cyber Visor
-      this.ctx.fillStyle = '#00f0ff';
-      this.ctx.shadowColor = '#00f0ff';
-      this.ctx.shadowBlur = 12;
-      this.ctx.fillRect(20, 6, 12, 5);
+      // Glowing Cyber Visor / Shades
+      if (skinCfg.id === 'OUTRUN') {
+        const sg = this.ctx.createLinearGradient(20, 6, 32, 11);
+        sg.addColorStop(0, '#ffaa00');
+        sg.addColorStop(1, '#ec4899');
+        this.ctx.fillStyle = sg;
+        this.ctx.shadowColor = '#ffaa00';
+        this.ctx.shadowBlur = 12;
+        this.ctx.fillRect(20, 6, 12, 5);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.fillRect(21, 7, 10, 1.2);
+      } else {
+        this.ctx.fillStyle = skinCfg.primaryColor;
+        this.ctx.shadowColor = skinCfg.primaryColor;
+        this.ctx.shadowBlur = 12;
+        this.ctx.fillRect(20, 6, 12, 5);
+      }
 
-      this.ctx.fillStyle = 'rgba(0, 240, 255, 0.4)';
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
       this.ctx.fillRect(6, 7, 14, 3);
 
       // Jump Thruster Boot Glow
       if (!p.isGrounded) {
-        this.ctx.fillStyle = '#ff007f';
-        this.ctx.shadowColor = '#ff007f';
+        this.ctx.fillStyle = skinCfg.accentColor;
+        this.ctx.shadowColor = skinCfg.accentColor;
         this.ctx.shadowBlur = 14;
         this.ctx.beginPath();
         this.ctx.arc(14 + l1Offset, 56, 4, 0, Math.PI * 2);

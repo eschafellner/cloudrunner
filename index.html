@@ -87,6 +87,13 @@
             </div>
             <div class="instruction-row sub-instruction">
               <span class="highlight-cyan">POWER-UPS:</span> 🛡️ Schild | 🧲 Magnet | ⚡ Overdrive-Dash
+            <div class="instruction-row">
+              <span class="key-badge">▼</span>
+              <span class="key-badge">S</span>
+              <span class="instruction-text">In der Luft: <strong>FAST-FALL</strong> (Sofortige Landung)</span>
+            </div>
+            <div class="instruction-row sub-instruction">
+              <span class="highlight-cyan">POWER-UPS:</span> 🛡️ Schild | 🧲 Magnet | ⚡ Overdrive-Dash
             </div>
             <div class="instruction-row sub-instruction">
               <span class="highlight-yellow">COMBOS:</span> Sammle Discs in der Luft für bis zu <strong>3x Multiplikator</strong>!
@@ -97,10 +104,59 @@
             <button id="start-btn" class="cyber-btn cyber-btn-primary">
               <span class="btn-glitch-text">SPIEL STARTEN</span>
             </button>
+            <button id="show-shop-btn" class="cyber-btn cyber-btn-secondary">
+              <span>🛒 GARAGE</span>
+            </button>
+            <button id="show-achievements-btn" class="cyber-btn cyber-btn-secondary">
+              <span>🎖️ ERFOLGE</span>
+            </button>
             <button id="show-highscores-btn" class="cyber-btn cyber-btn-secondary">
               <span>🏆 RANGLISTE</span>
             </button>
           </div>
+        </div>
+      </div>
+
+      <!-- Shop / Cyber-Garage Screen Overlay -->
+      <div id="shop-overlay" class="overlay-screen hidden">
+        <div class="overlay-card shop-card">
+          <div class="cyber-badge">GARAGE // BLACK MARKET</div>
+          <h2 class="game-title">CYBER-GARAGE</h2>
+          <div class="shop-balance-banner">
+            <span>BANKKONTO:</span>
+            <span id="shop-bank-discs" class="neon-yellow font-bold">0 DISCS</span>
+          </div>
+
+          <div class="shop-tabs">
+            <button class="shop-tab active" data-tab="skins">SKINS</button>
+            <button class="shop-tab" data-tab="trails">TRAILS</button>
+            <button class="shop-tab" data-tab="upgrades">UPGRADES</button>
+          </div>
+
+          <div id="shop-content" class="shop-items-container">
+            <!-- Dynamically populated via JS -->
+          </div>
+
+          <button id="close-shop-btn" class="cyber-btn cyber-btn-primary">
+            <span>ZURÜCK</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Achievements Overlay -->
+      <div id="achievements-overlay" class="overlay-screen hidden">
+        <div class="overlay-card achievements-card">
+          <div class="cyber-badge">RECORDS // TROPHIES</div>
+          <h2 class="game-title">ERFOLGE</h2>
+          <p class="game-subtitle">CYBERPUNK MEILENSTEINE</p>
+
+          <div id="achievements-list" class="achievements-container">
+            <!-- Dynamically populated via JS -->
+          </div>
+
+          <button id="close-achievements-btn" class="cyber-btn cyber-btn-primary">
+            <span>ZURÜCK</span>
+          </button>
         </div>
       </div>
 
@@ -131,8 +187,12 @@
 
           <div class="gameover-stats">
             <div class="stat-box">
-              <span class="stat-label">ERZIEHLTE PUNKTE</span>
+              <span class="stat-label">ERZIELTE PUNKTE</span>
               <span id="final-score" class="stat-value neon-yellow">0</span>
+            </div>
+            <div class="stat-box">
+              <span class="stat-label">DISCS GEBANKT</span>
+              <span id="final-discs-banked" class="stat-value neon-cyan">+0</span>
             </div>
           </div>
 
@@ -158,6 +218,9 @@
           </button>
         </div>
       </div>
+
+      <!-- Live Achievement / Unlock Toast -->
+      <div id="toast-container" class="toast-container"></div>
     </main>
 
     <!-- Mobile Touch Controls -->

@@ -729,3 +729,235 @@ html, body {
     right: 16px;
   }
 }
+
+/* ==========================================================================
+   Shop / Garage & Achievements UI
+   ========================================================================== */
+
+.shop-card, .achievements-card {
+  max-width: 520px;
+  width: 95%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.shop-balance-banner {
+  background: rgba(14, 11, 28, 0.9);
+  border: 1px solid var(--neon-yellow);
+  padding: 6px 16px;
+  border-radius: 4px;
+  font-size: 13px;
+  letter-spacing: 1px;
+  color: var(--text-main);
+  box-shadow: 0 0 12px rgba(255, 230, 0, 0.2);
+  margin-bottom: 14px;
+}
+
+.shop-tabs {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 14px;
+}
+
+.shop-tab {
+  flex: 1;
+  background: rgba(22, 18, 42, 0.85);
+  border: 1px solid rgba(0, 240, 255, 0.25);
+  color: var(--text-muted);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: 12px;
+  letter-spacing: 1.5px;
+  padding: 8px 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.shop-tab:hover {
+  color: var(--text-main);
+  border-color: var(--neon-cyan);
+}
+
+.shop-tab.active {
+  background: rgba(0, 240, 255, 0.15);
+  color: var(--neon-cyan);
+  border-color: var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
+}
+
+.shop-items-container, .achievements-container {
+  width: 100%;
+  max-height: 48vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px;
+  margin-bottom: 16px;
+}
+
+.shop-item-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: rgba(18, 14, 36, 0.85);
+  border: 1px solid rgba(136, 144, 173, 0.2);
+  padding: 10px 14px;
+  border-radius: 4px;
+  text-align: left;
+  transition: border-color 0.2s ease;
+}
+
+.shop-item-card.equipped {
+  border-color: var(--neon-cyan);
+  box-shadow: inset 0 0 10px rgba(0, 240, 255, 0.1);
+}
+
+.shop-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.shop-item-name {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 1px;
+}
+
+.shop-item-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.shop-item-meta {
+  font-size: 10px;
+  color: var(--neon-pink);
+  font-weight: bold;
+}
+
+.shop-item-action {
+  margin-left: 12px;
+}
+
+.shop-btn {
+  padding: 6px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.shop-btn-buy {
+  background: rgba(255, 230, 0, 0.15);
+  border: 1px solid var(--neon-yellow);
+  color: var(--neon-yellow);
+}
+
+.shop-btn-buy:hover:not(:disabled) {
+  background: var(--neon-yellow);
+  color: #000;
+  box-shadow: 0 0 12px rgba(255, 230, 0, 0.4);
+}
+
+.shop-btn-buy:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.shop-btn-equip {
+  background: rgba(0, 240, 255, 0.15);
+  border: 1px solid var(--neon-cyan);
+  color: var(--neon-cyan);
+}
+
+.shop-btn-equipped {
+  background: transparent;
+  border: 1px solid rgba(0, 240, 255, 0.4);
+  color: var(--neon-cyan);
+  cursor: default;
+}
+
+/* Achievement Item */
+.achievement-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(18, 14, 36, 0.85);
+  border: 1px solid rgba(136, 144, 173, 0.2);
+  padding: 10px 14px;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.achievement-card.unlocked {
+  border-color: var(--neon-yellow);
+  box-shadow: inset 0 0 10px rgba(255, 230, 0, 0.08);
+}
+
+.achievement-icon {
+  font-size: 24px;
+}
+
+.achievement-info {
+  flex: 1;
+}
+
+.achievement-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 1px;
+}
+
+.achievement-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.achievement-status {
+  font-size: 11px;
+  font-weight: bold;
+}
+
+/* Cyber Toast Notifications */
+.toast-container {
+  position: absolute;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.cyber-toast {
+  background: rgba(14, 11, 28, 0.95);
+  border: 1px solid var(--neon-yellow);
+  box-shadow: 0 0 20px rgba(255, 230, 0, 0.3);
+  padding: 8px 18px;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: bold;
+  letter-spacing: 1px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  animation: toastFade 3s ease forwards;
+}
+
+@keyframes toastFade {
+  0% { opacity: 0; transform: translateY(-12px); }
+  10% { opacity: 1; transform: translateY(0); }
+  85% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-12px); }
+}

@@ -27,6 +27,17 @@ import {
   calculateMagnetAttraction,
   calculateAirComboMultiplier,
   calculateAirComboBonus,
+  triggerPlayerFastFall,
+  getInitialMetaState,
+  migrateMetaState,
+  bankDiscs,
+  buyShopSkin,
+  buyShopTrail,
+  buyUpgrade,
+  checkAchievements,
+  SKIN_CATALOG,
+  TRAIL_CATALOG,
+  UPGRADE_CATALOG,
   GAME_CONFIG,
 } from '../js/logic.js';
 
@@ -610,6 +621,143 @@ describe('Logic Module - Air-Combo System', () => {
     // 4 discs @ 10pts each * (2.5 - 1.0) = 60 bonus points
     const bonus4 = calculateAirComboBonus(4, 10);
     assert.equal(bonus4, 60);
+  });
+});
+
+describe('Logic Module - Fast-Fall Mechanics', () => {
+  it('should apply fast-fall when player is airborne', () => {
+    const player = { isGrounded: false, vy: -200 };
+    const success = triggerPlayerFastFall(player);
+    assert.equal(success, true);
+    assert.equal(player.vy, GAME_CONFIG.FAST_FALL_VELOCITY);
+    assert.equal(player.isFastFalling, true);
+  });
+
+  it('should reject fast-fall when player is already grounded', () => {
+    const player = { isGrounded: true, vy: 0 };
+    const success = triggerPlayerFastFall(player);
+    assert.equal(success, false);
+    assert.equal(player.vy, 0);
+  });
+
+  it('should not reduce velocity if already falling faster than fastFallVelocity', () => {
+    const player = { isGrounded: false, vy: 950 };
+    const success = triggerPlayerFastFall(player, 850);
+    assert.equal(success, false);
+    assert.equal(player.vy, 950);
+  });
+});
+
+describe('Logic Module - Metaprogression, Shop & Achievements', () => {
+  it('should return valid initial meta state and safely migrate corrupted input', () => {
+    const initial = getInitialMetaState();
+    assert.equal(initial.version, 2);
+    assert.equal(initial.bankedDiscs, 0);
+    assert.equal(initial.selectedSkin, 'DEFAULT');
+
+    const migratedNull = migrateMetaState(null);
+    assert.equal(migratedNull.version, 2);
+    assert.equal(migratedNull.selectedSkin, 'DEFAULT');
+
+    const migratedPartial = migrateMetaState({ bankedDiscs: 45, selectedSkin: 'INVALID' });
+    assert.equal(migratedPartial.bankedDiscs, 45);
+    assert.equal(migratedPartial.selectedSkin, 'DEFAULT');
+  });
+
+  it('should bank discs cumulatively into meta state', () => {
+    let state = getInitialMetaState();
+    state = bankDiscs(state, 25);
+    assert.equal(state.bankedDiscs, 25);
+    assert.equal(state.stats.totalDiscsBanked, 25);
+
+    state = bankDiscs(state, 15);
+    assert.equal(state.bankedDiscs, 40);
+    assert.equal(state.stats.totalDiscsBanked, 40);
+  });
+
+  it('should handle shop purchases for skins and check disc balance', () => {
+    let state = getInitialMetaState();
+    state = bankDiscs(state, 70);
+
+    // Buy Shinobi (costs 60)
+    const resultSuccess = buyShopSkin(state, 'SHINOBI');
+    assert.equal(resultSuccess.success, true);
+    assert.equal(resultSuccess.metaState.selectedSkin, 'SHINOBI');
+    assert.equal(resultSuccess.metaState.bankedDiscs, 10);
+    assert.ok(resultSuccess.metaState.unlockedSkins.includes('SHINOBI'));
+
+    // Try buying Outrun (costs 120, only 10 left)
+    const resultFail = buyShopSkin(resultSuccess.metaState, 'OUTRUN');
+    assert.equal(resultFail.success, false);
+    assert.equal(resultFail.metaState.bankedDiscs, 10);
+    assert.equal(resultFail.metaState.selectedSkin, 'SHINOBI');
+  });
+
+  it('should handle shop purchases for trails', () => {
+    let state = getInitialMetaState();
+    state = bankDiscs(state, 60);
+
+    const result = buyShopTrail(state, 'MATRIX');
+    assert.equal(result.success, true);
+    assert.equal(result.metaState.selectedTrail, 'MATRIX');
+    assert.equal(result.metaState.bankedDiscs, 10);
+  });
+
+  it('should upgrade perks up to maxLevel and deduct escalating costs', () => {
+    let state = getInitialMetaState();
+    state = bankDiscs(state, 300);
+
+    // Upgrade magnetDuration: costs are 40, 80, 150
+    const upg1 = buyUpgrade(state, 'magnetDuration');
+    assert.equal(upg1.success, true);
+    assert.equal(upg1.metaState.upgrades.magnetDuration, 1);
+    assert.equal(upg1.metaState.bankedDiscs, 260);
+
+    const upg2 = buyUpgrade(upg1.metaState, 'magnetDuration');
+    assert.equal(upg2.success, true);
+    assert.equal(upg2.metaState.upgrades.magnetDuration, 2);
+    assert.equal(upg2.metaState.bankedDiscs, 180);
+
+    const upg3 = buyUpgrade(upg2.metaState, 'magnetDuration');
+    assert.equal(upg3.success, true);
+    assert.equal(upg3.metaState.upgrades.magnetDuration, 3);
+    assert.equal(upg3.metaState.bankedDiscs, 30);
+
+    // Level 3 is max
+    const upg4 = buyUpgrade(upg3.metaState, 'magnetDuration');
+    assert.equal(upg4.success, false);
+    assert.equal(upg4.metaState.upgrades.magnetDuration, 3);
+  });
+
+  it('should check achievements and return newly unlocked milestones', () => {
+    const state = getInitialMetaState();
+    state.bankedDiscs = 120; // Satisfies DISC_COLLECTOR
+
+    const runStats = {
+      obstaclesCleared: 5,
+      doubleJumps: 25,
+      maxAirCombo: 3.0,
+      gameTime: 95,
+      score: 800,
+      hitsTaken: 0,
+      overdriveKills: 4,
+      currentSpeed: GAME_CONFIG.MAX_SPEED,
+    };
+
+    const res = checkAchievements(state, runStats);
+    assert.ok(res.newlyUnlocked.includes('FIRST_BLOOD'));
+    assert.ok(res.newlyUnlocked.includes('DOUBLE_JUMP_ROOKIE'));
+    assert.ok(res.newlyUnlocked.includes('AIR_ACROBAT'));
+    assert.ok(res.newlyUnlocked.includes('NIGHT_RUNNER'));
+    assert.ok(res.newlyUnlocked.includes('DISC_COLLECTOR'));
+    assert.ok(res.newlyUnlocked.includes('UNTOUCHABLE'));
+    assert.ok(res.newlyUnlocked.includes('OVERDRIVE_RAMPAGE'));
+    assert.ok(res.newlyUnlocked.includes('SPEED_DEMON'));
+    assert.equal(res.metaState.achievements.FIRST_BLOOD, true);
+
+    // Running again with same stats should yield empty newlyUnlocked
+    const res2 = checkAchievements(res.metaState, runStats);
+    assert.equal(res2.newlyUnlocked.length, 0);
   });
 });
 

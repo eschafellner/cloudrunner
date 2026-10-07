@@ -55,6 +55,9 @@ export const GAME_CONFIG = {
   // Air Combo
   AIR_COMBO_MIN_DISCS: 2,     // Minimum airborne discs to trigger combo
   MAX_AIR_COMBO_MULTIPLIER: 3.0,
+
+  // Fast Fall mechanics
+  FAST_FALL_VELOCITY: 850,    // Accelerated downward velocity on down-input in air
 };
 
 /**
@@ -767,5 +770,319 @@ export function calculateAirComboBonus(airDiscsCount, discBonus = GAME_CONFIG.DI
   }
   const mult = calculateAirComboMultiplier(airDiscsCount);
   return Math.floor(airDiscsCount * discBonus * (mult - 1.0));
+}
+
+/**
+ * Triggers accelerated fast-fall when player presses down in mid-air.
+ *
+ * @param {Object} player - Player object with isGrounded, vy
+ * @param {number} [fastFallVelocity] - Target downward velocity
+ * @returns {boolean} True if fast-fall was applied
+ */
+export function triggerPlayerFastFall(player, fastFallVelocity = GAME_CONFIG.FAST_FALL_VELOCITY) {
+  if (!player || player.isGrounded) return false;
+  if (player.vy < fastFallVelocity) {
+    player.vy = fastFallVelocity;
+    player.isFastFalling = true;
+    return true;
+  }
+  return false;
+}
+
+/* ------------------- METAPROGRESSION, SHOP & ACHIEVEMENTS ------------------- */
+
+export const SKIN_CATALOG = {
+  DEFAULT: {
+    id: 'DEFAULT',
+    name: 'Cyber Runner',
+    cost: 0,
+    desc: 'Klassisches Neon-Cyan & Magenta',
+    primaryColor: '#00f0ff',
+    accentColor: '#ff007f',
+    suitColor: '#1e1c2e',
+  },
+  SHINOBI: {
+    id: 'SHINOBI',
+    name: 'Shadow Shinobi',
+    cost: 60,
+    desc: 'Carbon-Anzug, Giftgrünes Visier & Cyber-Katana',
+    primaryColor: '#00ff88',
+    accentColor: '#10b981',
+    suitColor: '#0f172a',
+  },
+  OUTRUN: {
+    id: 'OUTRUN',
+    name: 'Outrun Sunset',
+    cost: 120,
+    desc: '80s Retro-Violett & Sonnenuntergangs-Visier',
+    primaryColor: '#ffaa00',
+    accentColor: '#8b5cf6',
+    suitColor: '#2e1065',
+  },
+  CHROME: {
+    id: 'CHROME',
+    name: 'Chrome Phantom',
+    cost: 200,
+    desc: 'Spiegelnder Silber-Körper & Regenbogen-Aura',
+    primaryColor: '#ffffff',
+    accentColor: '#e0f2fe',
+    suitColor: '#475569',
+  },
+};
+
+export const TRAIL_CATALOG = {
+  CYAN: {
+    id: 'CYAN',
+    name: 'Cyan Ghost',
+    cost: 0,
+    desc: 'Klassisches Neon-Cyan Nachleuchten',
+    color: '#00f0ff',
+  },
+  MATRIX: {
+    id: 'MATRIX',
+    name: 'Matrix Code',
+    cost: 50,
+    desc: 'Giftgrüne digitale Code-Partikel',
+    color: '#00ff66',
+  },
+  RAINBOW: {
+    id: 'RAINBOW',
+    name: 'Prismatic Holo',
+    cost: 100,
+    desc: 'Farbwechselnder Regenbogen-Schweif',
+    color: 'RAINBOW',
+  },
+};
+
+export const UPGRADE_CATALOG = {
+  magnetDuration: {
+    id: 'magnetDuration',
+    name: 'Magnet-Feld',
+    maxLevel: 3,
+    costs: [40, 80, 150],
+    bonusPerLevel: 1.0,
+    unit: 's',
+    desc: '+1s Magnet-Dauer pro Stufe',
+  },
+  shieldBoost: {
+    id: 'shieldBoost',
+    name: 'Schild-Emitter',
+    maxLevel: 3,
+    costs: [50, 100, 180],
+    bonusPerLevel: 0.15,
+    unit: 'Chance',
+    desc: '+15% Schild-Spawnchance pro Stufe',
+  },
+  overdriveBoost: {
+    id: 'overdriveBoost',
+    name: 'Overdrive-Zelle',
+    maxLevel: 3,
+    costs: [60, 120, 200],
+    bonusPerLevel: 0.6,
+    unit: 's',
+    desc: '+0.6s Overdrive-Dauer pro Stufe',
+  },
+  discEfficiency: {
+    id: 'discEfficiency',
+    name: 'Disc-Konverter',
+    maxLevel: 3,
+    costs: [50, 100, 200],
+    reqDiscs: [18, 16, 14],
+    desc: 'Benötigt weniger Discs pro Extraleben (18/16/14)',
+  },
+};
+
+export const ACHIEVEMENTS_CONFIG = {
+  FIRST_BLOOD: { id: 'FIRST_BLOOD', title: 'Erster Schritt', desc: 'Überwinde dein erstes Hindernis', icon: '🥉' },
+  DOUBLE_JUMP_ROOKIE: { id: 'DOUBLE_JUMP_ROOKIE', title: 'Himmelsstürmer', desc: 'Führe 20 Doppelsprünge in einem Run aus', icon: '🥉' },
+  AIR_ACROBAT: { id: 'AIR_ACROBAT', title: 'Cyber-Akrobat', desc: 'Erreiche eine 3.0x Air-Combo', icon: '🥈' },
+  NIGHT_RUNNER: { id: 'NIGHT_RUNNER', title: 'Nachtschwärmer', desc: 'Überlebe bis zur Cyberpunk-Nacht (90s)', icon: '🥈' },
+  DISC_COLLECTOR: { id: 'DISC_COLLECTOR', title: 'Disc-Magnet', desc: 'Besitze 100 Discs in deiner Bank', icon: '🥈' },
+  UNTOUCHABLE: { id: 'UNTOUCHABLE', title: 'Unantastbar', desc: 'Erreiche 750 Punkte ohne Schadensverlust', icon: '🥇' },
+  OVERDRIVE_RAMPAGE: { id: 'OVERDRIVE_RAMPAGE', title: 'Overdrive-Rausch', desc: 'Zerstöre 3 Hindernisse im Overdrive', icon: '🥇' },
+  SPEED_DEMON: { id: 'SPEED_DEMON', title: 'Lichtgeschwindigkeit', desc: 'Erreiche die Höchstgeschwindigkeit', icon: '🏆' },
+};
+
+/**
+ * Returns default metadata state structure.
+ */
+export function getInitialMetaState() {
+  return {
+    version: 2,
+    bankedDiscs: 0,
+    unlockedSkins: ['DEFAULT'],
+    selectedSkin: 'DEFAULT',
+    unlockedTrails: ['CYAN'],
+    selectedTrail: 'CYAN',
+    upgrades: {
+      magnetDuration: 0,
+      shieldBoost: 0,
+      overdriveBoost: 0,
+      discEfficiency: 0,
+    },
+    achievements: {
+      FIRST_BLOOD: false,
+      DOUBLE_JUMP_ROOKIE: false,
+      AIR_ACROBAT: false,
+      NIGHT_RUNNER: false,
+      DISC_COLLECTOR: false,
+      UNTOUCHABLE: false,
+      OVERDRIVE_RAMPAGE: false,
+      SPEED_DEMON: false,
+    },
+    stats: {
+      totalRuns: 0,
+      totalDiscsBanked: 0,
+      totalObstaclesCleared: 0,
+      highScore: 0,
+      maxAirCombo: 1.0,
+    },
+  };
+}
+
+/**
+ * Safely parses or migrates stored metadata.
+ */
+export function migrateMetaState(storedData) {
+  const initial = getInitialMetaState();
+  if (!storedData || typeof storedData !== 'object') {
+    return initial;
+  }
+
+  return {
+    version: 2,
+    bankedDiscs: Math.max(0, Number(storedData.bankedDiscs) || 0),
+    unlockedSkins: Array.isArray(storedData.unlockedSkins) && storedData.unlockedSkins.length
+      ? [...new Set(['DEFAULT', ...storedData.unlockedSkins])]
+      : ['DEFAULT'],
+    selectedSkin: SKIN_CATALOG[storedData.selectedSkin] ? storedData.selectedSkin : 'DEFAULT',
+    unlockedTrails: Array.isArray(storedData.unlockedTrails) && storedData.unlockedTrails.length
+      ? [...new Set(['CYAN', ...storedData.unlockedTrails])]
+      : ['CYAN'],
+    selectedTrail: TRAIL_CATALOG[storedData.selectedTrail] ? storedData.selectedTrail : 'CYAN',
+    upgrades: {
+      magnetDuration: Math.min(3, Math.max(0, Number(storedData.upgrades?.magnetDuration) || 0)),
+      shieldBoost: Math.min(3, Math.max(0, Number(storedData.upgrades?.shieldBoost) || 0)),
+      overdriveBoost: Math.min(3, Math.max(0, Number(storedData.upgrades?.overdriveBoost) || 0)),
+      discEfficiency: Math.min(3, Math.max(0, Number(storedData.upgrades?.discEfficiency) || 0)),
+    },
+    achievements: {
+      ...initial.achievements,
+      ...(storedData.achievements || {}),
+    },
+    stats: {
+      totalRuns: Math.max(0, Number(storedData.stats?.totalRuns) || 0),
+      totalDiscsBanked: Math.max(0, Number(storedData.stats?.totalDiscsBanked) || 0),
+      totalObstaclesCleared: Math.max(0, Number(storedData.stats?.totalObstaclesCleared) || 0),
+      highScore: Math.max(0, Number(storedData.stats?.highScore) || 0),
+      maxAirCombo: Math.max(1.0, Number(storedData.stats?.maxAirCombo) || 1.0),
+    },
+  };
+}
+
+/**
+ * Banks collected discs from a run into persistent account.
+ */
+export function bankDiscs(metaState, count) {
+  const state = migrateMetaState(metaState);
+  const add = Math.max(0, count || 0);
+  state.bankedDiscs += add;
+  state.stats.totalDiscsBanked += add;
+  return state;
+}
+
+/**
+ * Purchases and equips a skin from the shop.
+ */
+export function buyShopSkin(metaState, skinId) {
+  const state = migrateMetaState(metaState);
+  const skin = SKIN_CATALOG[skinId];
+  if (!skin) return { success: false, metaState: state, message: 'Unbekannter Skin' };
+
+  if (state.unlockedSkins.includes(skinId)) {
+    state.selectedSkin = skinId;
+    return { success: true, metaState: state, message: 'Skin ausgerüstet!' };
+  }
+
+  if (state.bankedDiscs < skin.cost) {
+    return { success: false, metaState: state, message: `Nicht genug Discs! (Benötigt: ${skin.cost})` };
+  }
+
+  state.bankedDiscs -= skin.cost;
+  state.unlockedSkins.push(skinId);
+  state.selectedSkin = skinId;
+  return { success: true, metaState: state, message: `${skin.name} gekauft und ausgerüstet!` };
+}
+
+/**
+ * Purchases and equips a trail from the shop.
+ */
+export function buyShopTrail(metaState, trailId) {
+  const state = migrateMetaState(metaState);
+  const trail = TRAIL_CATALOG[trailId];
+  if (!trail) return { success: false, metaState: state, message: 'Unbekannter Trail' };
+
+  if (state.unlockedTrails.includes(trailId)) {
+    state.selectedTrail = trailId;
+    return { success: true, metaState: state, message: 'Trail ausgerüstet!' };
+  }
+
+  if (state.bankedDiscs < trail.cost) {
+    return { success: false, metaState: state, message: `Nicht genug Discs! (Benötigt: ${trail.cost})` };
+  }
+
+  state.bankedDiscs -= trail.cost;
+  state.unlockedTrails.push(trailId);
+  state.selectedTrail = trailId;
+  return { success: true, metaState: state, message: `${trail.name} gekauft und ausgerüstet!` };
+}
+
+/**
+ * Upgrades a perk level in the shop.
+ */
+export function buyUpgrade(metaState, upgradeKey) {
+  const state = migrateMetaState(metaState);
+  const upg = UPGRADE_CATALOG[upgradeKey];
+  if (!upg) return { success: false, metaState: state, message: 'Unbekanntes Upgrade' };
+
+  const currentLevel = state.upgrades[upgradeKey] || 0;
+  if (currentLevel >= upg.maxLevel) {
+    return { success: false, metaState: state, message: 'Bereits maximale Stufe!' };
+  }
+
+  const cost = upg.costs[currentLevel];
+  if (state.bankedDiscs < cost) {
+    return { success: false, metaState: state, message: `Nicht genug Discs! (Benötigt: ${cost})` };
+  }
+
+  state.bankedDiscs -= cost;
+  state.upgrades[upgradeKey] = currentLevel + 1;
+  return { success: true, metaState: state, message: `${upg.name} auf Stufe ${currentLevel + 1} verbessert!` };
+}
+
+/**
+ * Checks for milestone achievement unlock conditions.
+ */
+export function checkAchievements(metaState, runStats = {}) {
+  const state = migrateMetaState(metaState);
+  const newlyUnlocked = [];
+
+  const check = (id, condition) => {
+    if (!state.achievements[id] && condition) {
+      state.achievements[id] = true;
+      newlyUnlocked.push(id);
+    }
+  };
+
+  check('FIRST_BLOOD', (runStats.obstaclesCleared || 0) >= 1);
+  check('DOUBLE_JUMP_ROOKIE', (runStats.doubleJumps || 0) >= 20);
+  check('AIR_ACROBAT', (runStats.maxAirCombo || 0) >= 3.0);
+  check('NIGHT_RUNNER', (runStats.gameTime || 0) >= 90);
+  check('DISC_COLLECTOR', state.bankedDiscs >= 100);
+  check('UNTOUCHABLE', (runStats.score || 0) >= 750 && (runStats.hitsTaken || 0) === 0);
+  check('OVERDRIVE_RAMPAGE', (runStats.overdriveKills || 0) >= 3);
+  check('SPEED_DEMON', (runStats.currentSpeed || 0) >= GAME_CONFIG.MAX_SPEED);
+
+  return { newlyUnlocked, metaState: state };
 }
 
