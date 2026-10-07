@@ -39,6 +39,7 @@ import {
   TRAIL_CATALOG,
   UPGRADE_CATALOG,
   ACHIEVEMENTS_CONFIG,
+  stepParticle,
 } from './logic.js';
 
 import { soundEngine } from './audio.js';
@@ -92,7 +93,6 @@ class Game {
     this.runHitsTaken = 0;
     this.runMaxAirCombo = 1.0;
     this.groundScrollZ = 0;
-    this.foregroundElements = this.generateForegroundElements(4);
 
     // Responsive virtual resolution
     this.vWidth = 960;
@@ -167,7 +167,7 @@ class Game {
     // Particle system pool
     this.particlePool = [];
     this.activeParticles = [];
-    this.initParticlePool(120);
+    this.initParticlePool(320);
 
     // Floating text popups
     this.floatingTexts = [];
@@ -1089,53 +1089,6 @@ class Game {
     });
   }
 
-  generateForegroundElements(count = 4) {
-    const list = [];
-    for (let i = 0; i < count; i++) {
-      list.push({
-        x: i * 360 + 100,
-        type: i % 2 === 0 ? 'LIGHT_POLE' : 'SIGN_GANTRY',
-        height: 140 + (i % 2) * 50,
-      });
-    }
-    return list;
-  }
-
-  updateForegroundElements(dt, speed) {
-    const fgSpeed = speed * 1.45;
-    this.foregroundElements.forEach(item => {
-      item.x -= fgSpeed * dt;
-      if (item.x < -150) {
-        item.x = this.vWidth + 150 + Math.random() * 80;
-      }
-    });
-  }
-
-  renderForegroundElements() {
-    this.ctx.save();
-    this.foregroundElements.forEach(item => {
-      if (item.x > -150 && item.x < this.vWidth + 150) {
-        this.ctx.fillStyle = '#06040d';
-        if (item.type === 'LIGHT_POLE') {
-          this.ctx.fillRect(item.x, this.groundY - item.height, 8, item.height);
-          this.ctx.fillRect(item.x - 18, this.groundY - item.height, 26, 6);
-          this.ctx.fillStyle = '#ffe600';
-          this.ctx.shadowColor = '#ffe600';
-          this.ctx.shadowBlur = 14;
-          this.ctx.fillRect(item.x - 16, this.groundY - item.height + 6, 10, 4);
-        } else {
-          this.ctx.fillRect(item.x, this.groundY - item.height, 10, item.height);
-          this.ctx.fillRect(item.x - 30, this.groundY - item.height, 60, 10);
-          this.ctx.fillStyle = '#ff007f';
-          this.ctx.shadowColor = '#ff007f';
-          this.ctx.shadowBlur = 12;
-          this.ctx.fillRect(item.x - 22, this.groundY - item.height + 10, 44, 4);
-        }
-      }
-    });
-    this.ctx.restore();
-  }
-
   /* ------------------- HIGHSCORES ------------------- */
 
   loadHighScores() {
@@ -1512,6 +1465,64 @@ class Game {
     this.activeParticles.push(p);
   }
 
+  /** Staubwolke beim Landen / Laufen (bewegt sich seitlich, steigt leicht auf). */
+  emitDust(x, y, count, intensity = 1) {
+    for (let i = 0; i < count; i++) {
+      const p = this.particlePool.find(item => !item.active);
+      if (!p) break;
+      p.active = true;
+      p.type = 'DUST';
+      p.color = this.currentLighting && this.currentLighting.neonIntensity > 0.5 ? '#9a7bff' : '#c9b8a0';
+      p.x = x + (Math.random() - 0.5) * 16;
+      p.y = y;
+      p.size = 2.5 + Math.random() * 3 * intensity;
+      p.maxLife = 0.35 + Math.random() * 0.3;
+      p.life = p.maxLife;
+      p.vx = (Math.random() - 0.5) * 220 * intensity - this.currentSpeed * 0.15;
+      p.vy = -20 - Math.random() * 60 * intensity;
+      this.activeParticles.push(p);
+    }
+  }
+
+  /** Eckige Splitter mit Schwerkraft (Treffer / Hindernis-Zerstörung). */
+  emitShards(x, y, count, color) {
+    for (let i = 0; i < count; i++) {
+      const p = this.particlePool.find(item => !item.active);
+      if (!p) break;
+      p.active = true;
+      p.type = 'SHARD';
+      p.color = color;
+      p.x = x;
+      p.y = y;
+      p.size = 3 + Math.random() * 4;
+      p.maxLife = 0.6 + Math.random() * 0.5;
+      p.life = p.maxLife;
+      const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.2;
+      const speed = 150 + Math.random() * 320;
+      p.vx = Math.cos(angle) * speed;
+      p.vy = Math.sin(angle) * speed;
+      p.rot = Math.random() * Math.PI * 2;
+      this.activeParticles.push(p);
+    }
+  }
+
+  /** Horizontale Geschwindigkeitslinien (Overdrive / hohes Tempo). */
+  emitSpeedLine() {
+    const p = this.particlePool.find(item => !item.active);
+    if (!p) return;
+    p.active = true;
+    p.type = 'SPEEDLINE';
+    p.color = '#ffffff';
+    p.x = this.vWidth + 10;
+    p.y = 30 + Math.random() * (this.groundY - 60);
+    p.size = 40 + Math.random() * 60; // Linienlänge
+    p.maxLife = 0.35;
+    p.life = p.maxLife;
+    p.vx = -(this.currentSpeed + 500 + Math.random() * 400);
+    p.vy = 0;
+    this.activeParticles.push(p);
+  }
+
   addFloatingText(x, y, text, color = '#ffe600') {
     this.floatingTexts.push({
       x,
@@ -1565,20 +1576,16 @@ class Game {
       this.currentSpeed += GAME_CONFIG.OVERDRIVE_SPEED_BOOST;
     }
 
-    // Dynamic music updates
+    // Dynamic music updates (state flags only, zero audio timing jitter)
     soundEngine.updateMusicDynamics({
-      speed: this.currentSpeed,
-      minSpeed: GAME_CONFIG.BASE_SPEED,
-      maxSpeed: GAME_CONFIG.MAX_SPEED + GAME_CONFIG.OVERDRIVE_SPEED_BOOST,
       lives: this.player.lives,
       isOverdrive: this.powerUpState.overdriveTimer > 0,
     });
 
-    // Real-time achievement checks for survival & speed
+    // Real-time achievement checks for survival & speed (in-memory update, saved on game over)
     if (this.gameTime >= 90 && !this.metaState.achievements.NIGHT_RUNNER) {
       const ach = checkAchievements(this.metaState, { gameTime: this.gameTime });
       this.metaState = ach.metaState;
-      this.saveMetaState();
       ach.newlyUnlocked.forEach(id => {
         const a = ACHIEVEMENTS_CONFIG[id];
         if (a) this.showToast(a.icon, a.title, a.desc);
@@ -1588,7 +1595,6 @@ class Game {
     if (this.currentSpeed >= GAME_CONFIG.MAX_SPEED && !this.metaState.achievements.SPEED_DEMON) {
       const ach = checkAchievements(this.metaState, { currentSpeed: this.currentSpeed });
       this.metaState = ach.metaState;
-      this.saveMetaState();
       ach.newlyUnlocked.forEach(id => {
         const a = ACHIEVEMENTS_CONFIG[id];
         if (a) this.showToast(a.icon, a.title, a.desc);
@@ -1597,10 +1603,14 @@ class Game {
 
     // Update Player Physics with Platforms and Chasms
     const wasGrounded = this.player.isGrounded;
+    const prevVy = this.player.vy;
     updatePlayerPhysics(this.player, dt, this.groundY, this.activePlatforms, this.activeChasms);
 
     // Landing check for Air-Combos
     if (!wasGrounded && this.player.isGrounded) {
+      const impact = Math.min(1.6, Math.max(0.6, Math.abs(prevVy) / 700));
+      this.emitDust(this.player.x + this.player.width / 2, this.player.y + this.player.height, Math.round(8 * impact), impact);
+      if (impact > 1.1) this.screenShake = Math.max(this.screenShake, 3);
       if (this.airDiscsCount >= GAME_CONFIG.AIR_COMBO_MIN_DISCS) {
         const mult = calculateAirComboMultiplier(this.airDiscsCount);
         const bonus = calculateAirComboBonus(this.airDiscsCount);
@@ -1612,7 +1622,6 @@ class Game {
         if (mult >= 3.0 && !this.metaState.achievements.AIR_ACROBAT) {
           const ach = checkAchievements(this.metaState, { maxAirCombo: mult });
           this.metaState = ach.metaState;
-          this.saveMetaState();
           ach.newlyUnlocked.forEach(id => {
             const a = ACHIEVEMENTS_CONFIG[id];
             if (a) this.showToast(a.icon, a.title, a.desc);
@@ -1787,19 +1796,18 @@ class Game {
     }
 
     // 5. Update Particles
+    if (this.powerUpState.overdriveTimer > 0 && Math.random() < 0.6) this.emitSpeedLine();
+    if (this.player.isGrounded && Math.random() < 0.25) {
+      this.emitDust(this.player.x + 4, this.player.y + this.player.height, 1, 0.5);
+    }
     for (let i = this.activeParticles.length - 1; i >= 0; i--) {
       const p = this.activeParticles[i];
-      p.life -= dt;
-      if (p.life <= 0) {
+      if (!stepParticle(p, dt)) {
         p.active = false;
         this.activeParticles.splice(i, 1);
         continue;
       }
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      if (p.type === 'RING') {
-        p.size += dt * 70;
-      }
+      if (p.rot !== undefined) p.rot += dt * 8;
     }
 
     // 6. Update Floating Texts
@@ -1896,6 +1904,7 @@ class Game {
 
     soundEngine.playHurt();
     this.emitParticles(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, 20, '#ff007f');
+    this.emitShards(this.player.x + this.player.width / 2, this.player.y + this.player.height / 2, 14, '#ff007f');
     this.updateHUD();
 
     if (this.player.lives <= 0) {
@@ -1914,8 +1923,6 @@ class Game {
       if (car.speed > 0 && car.x > this.vWidth + 100) car.x = -100;
       if (car.speed < 0 && car.x < -100) car.x = this.vWidth + 100;
     });
-
-    this.updateForegroundElements(dt, speed);
   }
 
   /* ------------------- RENDERING ------------------- */
@@ -1969,9 +1976,6 @@ class Game {
       this.ctx.fillStyle = `rgba(255, 0, 80, ${this.screenFlash * 0.4})`;
       this.ctx.fillRect(0, 0, this.vWidth, this.vHeight);
     }
-
-    // 11.1 Foreground Cyber-Elements (Poles, Overhead Signs)
-    this.renderForegroundElements();
 
     // 12. Vignette & Scanlines
     this.renderVignetteAndScanlines();
@@ -2099,142 +2103,86 @@ class Game {
   renderGroundAndChasms() {
     const { neonIntensity } = this.currentLighting;
 
-    // 1. Draw Full Ground Base
-    const groundGrad = this.ctx.createLinearGradient(0, this.groundY, 0, this.vHeight);
-    groundGrad.addColorStop(0, '#0d0a1a');
-    groundGrad.addColorStop(1, '#05030a');
-    this.ctx.fillStyle = groundGrad;
+    // 1. Draw Highway Ground Base
+    this.ctx.fillStyle = '#0a0814';
     this.ctx.fillRect(0, this.groundY, this.vWidth, this.vHeight - this.groundY);
 
-    // 1.1 Wet Street Sheen & Neon Puddle Reflections
-    const wetSheen = this.ctx.createLinearGradient(0, this.groundY, 0, this.groundY + 36);
-    wetSheen.addColorStop(0, `rgba(0, 240, 255, ${0.16 * Math.max(0.3, neonIntensity)})`);
-    wetSheen.addColorStop(0.3, `rgba(255, 0, 127, ${0.10 * Math.max(0.3, neonIntensity)})`);
-    wetSheen.addColorStop(1, 'rgba(0, 0, 0, 0)');
-    this.ctx.fillStyle = wetSheen;
-    this.ctx.fillRect(0, this.groundY, this.vWidth, 36);
+    // 2. Draw Active Chasms (Deep Abyss Voids with Warning Markings)
+    if (this.activeChasms.length > 0) {
+      for (let i = 0; i < this.activeChasms.length; i++) {
+        const chasm = this.activeChasms[i];
+        // Void pit cutout
+        this.ctx.fillStyle = '#020106';
+        this.ctx.fillRect(chasm.x, this.groundY - 2, chasm.width, this.vHeight - this.groundY + 10);
 
-    for (let p = 0; p < 4; p++) {
-      const px = ((p * 270) - (this.distantScrollX * 1.6)) % (this.vWidth + 240);
-      const puddleX = px < -100 ? px + this.vWidth + 240 : px;
-      if (!this.activeChasms.some(c => puddleX >= c.x - 25 && puddleX <= c.x + c.width + 25)) {
-        this.ctx.save();
-        this.ctx.fillStyle = (p % 2 === 0) ? 'rgba(0, 240, 255, 0.18)' : 'rgba(255, 0, 127, 0.15)';
+        // Warning hazard stripes on left & right edge
+        this.ctx.fillStyle = '#ffe600';
+        this.ctx.fillRect(chasm.x - 4, this.groundY, 4, 12);
+        this.ctx.fillRect(chasm.x + chasm.width, this.groundY, 4, 12);
+
+        this.ctx.strokeStyle = '#ff0055';
+        this.ctx.lineWidth = 2;
         this.ctx.beginPath();
-        this.ctx.ellipse(puddleX, this.groundY + 12 + (p * 5), 36, 4, 0, 0, Math.PI * 2);
-        this.ctx.fill();
-        this.ctx.restore();
+        this.ctx.moveTo(chasm.x, this.groundY);
+        this.ctx.lineTo(chasm.x, this.groundY + 28);
+        this.ctx.moveTo(chasm.x + chasm.width, this.groundY);
+        this.ctx.lineTo(chasm.x + chasm.width, this.groundY + 28);
+        this.ctx.stroke();
       }
     }
 
-    // 2. Draw Active Chasms (Deep Abyss Voids)
-    this.activeChasms.forEach(chasm => {
-      this.ctx.save();
-      // Cut out the void
-      const voidGrad = this.ctx.createLinearGradient(0, this.groundY, 0, this.vHeight);
-      voidGrad.addColorStop(0, 'rgba(3, 2, 8, 0.95)');
-      voidGrad.addColorStop(0.5, 'rgba(10, 0, 20, 0.98)');
-      voidGrad.addColorStop(1, '#000000');
-      this.ctx.fillStyle = voidGrad;
-      this.ctx.fillRect(chasm.x, this.groundY - 2, chasm.width, this.vHeight - this.groundY + 10);
-
-      // Abyss Bottom Laser/Warning Glow
-      const abyssGlow = this.ctx.createLinearGradient(0, this.vHeight - 40, 0, this.vHeight);
-      abyssGlow.addColorStop(0, 'rgba(255, 0, 127, 0)');
-      abyssGlow.addColorStop(1, 'rgba(255, 0, 127, 0.5)');
-      this.ctx.fillStyle = abyssGlow;
-      this.ctx.fillRect(chasm.x, this.vHeight - 40, chasm.width, 40);
-
-      // Warning hazard stripes on left & right edge
-      this.ctx.fillStyle = '#ffe600';
-      this.ctx.fillRect(chasm.x - 4, this.groundY, 4, 12);
-      this.ctx.fillRect(chasm.x + chasm.width, this.groundY, 4, 12);
-
-      this.ctx.strokeStyle = '#ff0055';
-      this.ctx.lineWidth = 2;
-      this.ctx.beginPath();
-      this.ctx.moveTo(chasm.x, this.groundY);
-      this.ctx.lineTo(chasm.x, this.groundY + 30);
-      this.ctx.moveTo(chasm.x + chasm.width, this.groundY);
-      this.ctx.lineTo(chasm.x + chasm.width, this.groundY + 30);
-      this.ctx.stroke();
-
-      this.ctx.restore();
-    });
-
-    // 3. Glowing Neon Top Track Line (segmented across chasms)
+    // 3. Glowing Neon Top Track Line (Single Batched Draw Call)
     this.ctx.save();
     this.ctx.strokeStyle = '#00f0ff';
     this.ctx.lineWidth = 3;
     this.ctx.shadowColor = '#00f0ff';
-    this.ctx.shadowBlur = 12 * Math.max(0.3, neonIntensity);
+    this.ctx.shadowBlur = 10 * Math.max(0.3, neonIntensity);
 
     let curX = 0;
-    const sortedChasms = [...this.activeChasms].sort((a, b) => a.x - b.x);
-
-    sortedChasms.forEach(chasm => {
-      if (chasm.x > curX) {
-        this.ctx.beginPath();
-        this.ctx.moveTo(curX, this.groundY);
-        this.ctx.lineTo(chasm.x, this.groundY);
-        this.ctx.stroke();
-      }
-      curX = Math.max(curX, chasm.x + chasm.width);
-    });
-
-    if (curX < this.vWidth) {
-      this.ctx.beginPath();
-      this.ctx.moveTo(curX, this.groundY);
+    this.ctx.beginPath();
+    if (this.activeChasms.length === 0) {
+      this.ctx.moveTo(0, this.groundY);
       this.ctx.lineTo(this.vWidth, this.groundY);
-      this.ctx.stroke();
+    } else {
+      const sortedChasms = this.activeChasms.slice().sort((a, b) => a.x - b.x);
+      for (let i = 0; i < sortedChasms.length; i++) {
+        const ch = sortedChasms[i];
+        if (ch.x > curX) {
+          this.ctx.moveTo(curX, this.groundY);
+          this.ctx.lineTo(ch.x, this.groundY);
+        }
+        curX = Math.max(curX, ch.x + ch.width);
+      }
+      if (curX < this.vWidth) {
+        this.ctx.moveTo(curX, this.groundY);
+        this.ctx.lineTo(this.vWidth, this.groundY);
+      }
     }
+    this.ctx.stroke();
     this.ctx.restore();
 
-    // 4. 3D Perspective Outrun Grid - Horizontal Forward-Rolling Lines
-    const gridDepthH = this.vHeight - this.groundY;
-    for (let k = 0; k < 8; k++) {
-      const prog = ((k / 8) + this.groundScrollZ) % 1.0;
-      const lineY = this.groundY + Math.pow(prog, 2.2) * gridDepthH;
-      const alpha = Math.min(0.65, Math.pow(prog, 1.2) * (0.15 + 0.45 * neonIntensity));
-
-      this.ctx.save();
-      this.ctx.strokeStyle = `rgba(0, 240, 255, ${alpha})`;
-      this.ctx.lineWidth = 1 + prog * 1.5;
-
-      let lineCurX = 0;
-      sortedChasms.forEach(chasm => {
-        if (chasm.x > lineCurX) {
-          this.ctx.beginPath();
-          this.ctx.moveTo(lineCurX, lineY);
-          this.ctx.lineTo(chasm.x, lineY);
-          this.ctx.stroke();
-        }
-        lineCurX = Math.max(lineCurX, chasm.x + chasm.width);
-      });
-      if (lineCurX < this.vWidth) {
-        this.ctx.beginPath();
-        this.ctx.moveTo(lineCurX, lineY);
-        this.ctx.lineTo(this.vWidth, lineY);
-        this.ctx.stroke();
-      }
-      this.ctx.restore();
-    }
-
-    // 5. 3D Perspective Outrun Grid - Fanned Longitudinal Lines
+    // 4. Moving Cyber-Highway Perspective Lines (Single Batched Draw Call)
     this.ctx.save();
-    this.ctx.strokeStyle = `rgba(0, 240, 255, ${0.12 + 0.25 * neonIntensity})`;
+    this.ctx.strokeStyle = `rgba(0, 240, 255, ${0.14 + 0.22 * neonIntensity})`;
     this.ctx.lineWidth = 1.5;
 
-    for (let x = -80; x < this.vWidth + 80; x += 45) {
+    this.ctx.beginPath();
+    for (let x = -60; x < this.vWidth + 60; x += 40) {
       const lineX = x - this.groundScrollX;
-      const inChasm = this.activeChasms.some(c => lineX >= c.x - 10 && lineX <= c.x + c.width + 10);
+      let inChasm = false;
+      for (let j = 0; j < this.activeChasms.length; j++) {
+        const c = this.activeChasms[j];
+        if (lineX >= c.x - 8 && lineX <= c.x + c.width + 8) {
+          inChasm = true;
+          break;
+        }
+      }
       if (!inChasm) {
-        this.ctx.beginPath();
         this.ctx.moveTo(lineX, this.groundY);
-        this.ctx.lineTo(lineX - 40, this.vHeight);
-        this.ctx.stroke();
+        this.ctx.lineTo(lineX - 35, this.vHeight);
       }
     }
+    this.ctx.stroke();
     this.ctx.restore();
   }
 
@@ -2426,22 +2374,12 @@ class Game {
       const normDist = Math.max(0, shadowDist) / 260;
       const shadowW = Math.max(8, (p.width * 0.72) * (1 - normDist * 0.55));
       const shadowH = Math.max(2, 5 * (1 - normDist * 0.55));
-      const shadowAlpha = (1 - normDist) * 0.42;
+      const shadowAlpha = (1 - normDist) * 0.38;
 
-      this.ctx.save();
-      // Dark ground shadow
       this.ctx.fillStyle = `rgba(0, 0, 0, ${shadowAlpha})`;
       this.ctx.beginPath();
       this.ctx.ellipse(p.x + p.width / 2, groundBelowY, shadowW, shadowH, 0, 0, Math.PI * 2);
       this.ctx.fill();
-
-      // Subtle wet ground neon sheen from player suit
-      this.ctx.fillStyle = skinCfg.primaryColor;
-      this.ctx.globalAlpha = shadowAlpha * 0.3;
-      this.ctx.beginPath();
-      this.ctx.ellipse(p.x + p.width / 2, groundBelowY, shadowW * 0.65, shadowH * 0.6, 0, 0, Math.PI * 2);
-      this.ctx.fill();
-      this.ctx.restore();
     }
 
     this.ctx.save();
@@ -2578,16 +2516,12 @@ class Game {
       this.ctx.fillRect(28, 23, 14, 3); // Glowing boot sole
 
       // Torso / cyber jacket
-      if (skinCfg.id === 'CHROME') {
-        const cg = this.ctx.createLinearGradient(4, 10, 24, 24);
-        cg.addColorStop(0, '#f1f5f9');
-        cg.addColorStop(0.5, '#94a3b8');
-        cg.addColorStop(1, '#475569');
-        this.ctx.fillStyle = cg;
-      } else {
-        this.ctx.fillStyle = skinCfg.suitColor;
-      }
+      this.ctx.fillStyle = skinCfg.id === 'CHROME' ? '#cbd5e1' : skinCfg.suitColor;
       this.ctx.fillRect(4, 10, 20, 14);
+      if (skinCfg.id === 'CHROME') {
+        this.ctx.fillStyle = '#f8fafc';
+        this.ctx.fillRect(4, 10, 20, 2);
+      }
 
       // Accent stripe / zipper
       this.ctx.fillStyle = skinCfg.accentColor;
@@ -2595,28 +2529,27 @@ class Game {
 
       // Head & Helmet tilted forward
       if (skinCfg.id === 'CHROME') {
-        const hg = this.ctx.createLinearGradient(16, 2, 32, 14);
-        hg.addColorStop(0, '#ffffff');
-        hg.addColorStop(0.5, '#cbd5e1');
-        hg.addColorStop(1, '#64748b');
-        this.ctx.fillStyle = hg;
+        this.ctx.fillStyle = '#e2e8f0';
       } else if (skinCfg.id === 'SHINOBI') {
         this.ctx.fillStyle = '#050811';
       } else {
         this.ctx.fillStyle = '#1f1d36';
       }
       this.ctx.fillRect(16, 2, 16, 12);
+      if (skinCfg.id === 'CHROME') {
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(16, 2, 16, 2);
+      }
 
       // Glowing Cyber Visor / Shades
       if (skinCfg.id === 'OUTRUN') {
-        const sg = this.ctx.createLinearGradient(24, 4, 34, 8);
-        sg.addColorStop(0, '#ffaa00');
-        sg.addColorStop(1, '#ff007f');
-        this.ctx.fillStyle = sg;
+        this.ctx.fillStyle = '#ffaa00';
         this.ctx.shadowColor = '#ffaa00';
         this.ctx.shadowBlur = 10;
         this.ctx.fillRect(24, 4, 10, 4);
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        this.ctx.fillStyle = '#ec4899';
+        this.ctx.fillRect(24, 6, 10, 2);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
         this.ctx.fillRect(25, 4, 8, 1);
       } else {
         this.ctx.fillStyle = skinCfg.primaryColor;
@@ -2694,20 +2627,12 @@ class Game {
       this.ctx.fillRect(18 + l1Offset, 52, 10, 4);
 
       // Torso / Cyber Jacket
-      if (skinCfg.id === 'CHROME') {
-        const cg = this.ctx.createLinearGradient(8, 16, 30, 38);
-        cg.addColorStop(0, '#f8fafc');
-        cg.addColorStop(0.4, '#94a3b8');
-        cg.addColorStop(0.8, '#cbd5e1');
-        cg.addColorStop(1, '#475569');
-        this.ctx.fillStyle = cg;
-      } else {
-        this.ctx.fillStyle = skinCfg.suitColor;
-      }
+      this.ctx.fillStyle = skinCfg.id === 'CHROME' ? '#cbd5e1' : skinCfg.suitColor;
       this.ctx.fillRect(8, 16, 22, 22);
-
-      // Outrun retro grid detail on jacket
-      if (skinCfg.id === 'OUTRUN') {
+      if (skinCfg.id === 'CHROME') {
+        this.ctx.fillStyle = '#f8fafc';
+        this.ctx.fillRect(8, 16, 22, 3);
+      } else if (skinCfg.id === 'OUTRUN') {
         this.ctx.strokeStyle = 'rgba(217, 70, 239, 0.45)';
         this.ctx.lineWidth = 1;
         this.ctx.beginPath();
@@ -2724,28 +2649,27 @@ class Game {
 
       // Head & Helmet
       if (skinCfg.id === 'CHROME') {
-        const hg = this.ctx.createLinearGradient(12, 2, 30, 16);
-        hg.addColorStop(0, '#ffffff');
-        hg.addColorStop(0.5, '#cbd5e1');
-        hg.addColorStop(1, '#64748b');
-        this.ctx.fillStyle = hg;
+        this.ctx.fillStyle = '#e2e8f0';
       } else if (skinCfg.id === 'SHINOBI') {
         this.ctx.fillStyle = '#050811';
       } else {
         this.ctx.fillStyle = '#1f1d36';
       }
       this.ctx.fillRect(12, 2, 18, 14);
+      if (skinCfg.id === 'CHROME') {
+        this.ctx.fillStyle = '#ffffff';
+        this.ctx.fillRect(12, 2, 18, 2);
+      }
 
       // Glowing Cyber Visor / Shades
       if (skinCfg.id === 'OUTRUN') {
-        const sg = this.ctx.createLinearGradient(20, 6, 32, 11);
-        sg.addColorStop(0, '#ffaa00');
-        sg.addColorStop(1, '#ec4899');
-        this.ctx.fillStyle = sg;
+        this.ctx.fillStyle = '#ffaa00';
         this.ctx.shadowColor = '#ffaa00';
         this.ctx.shadowBlur = 12;
         this.ctx.fillRect(20, 6, 12, 5);
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        this.ctx.fillStyle = '#ec4899';
+        this.ctx.fillRect(20, 9, 12, 2);
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
         this.ctx.fillRect(21, 7, 10, 1.2);
       } else {
         this.ctx.fillStyle = skinCfg.primaryColor;
@@ -2923,6 +2847,28 @@ class Game {
         this.ctx.globalAlpha = alpha;
         this.ctx.beginPath();
         this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+        this.ctx.stroke();
+      } else if (p.type === 'DUST') {
+        this.ctx.fillStyle = p.color;
+        this.ctx.globalAlpha = alpha * 0.45;
+        this.ctx.beginPath();
+        this.ctx.arc(p.x, p.y, p.size * (1.6 - alpha * 0.6), 0, Math.PI * 2);
+        this.ctx.fill();
+      } else if (p.type === 'SHARD') {
+        this.ctx.translate(p.x, p.y);
+        this.ctx.rotate(p.rot || 0);
+        this.ctx.fillStyle = p.color;
+        this.ctx.shadowColor = p.color;
+        this.ctx.shadowBlur = 8;
+        this.ctx.globalAlpha = alpha;
+        this.ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
+      } else if (p.type === 'SPEEDLINE') {
+        this.ctx.strokeStyle = p.color;
+        this.ctx.globalAlpha = alpha * 0.35;
+        this.ctx.lineWidth = 1.5;
+        this.ctx.beginPath();
+        this.ctx.moveTo(p.x, p.y);
+        this.ctx.lineTo(p.x + p.size, p.y);
         this.ctx.stroke();
       }
 

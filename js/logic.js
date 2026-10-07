@@ -1086,3 +1086,38 @@ export function checkAchievements(metaState, runStats = {}) {
   return { newlyUnlocked, metaState: state };
 }
 
+
+/* ------------------- PARTICLE PHYSICS ------------------- */
+
+/**
+ * Physik-Parameter je Partikeltyp (Schwerkraft in px/s², Luftwiderstand pro Sekunde).
+ */
+export const PARTICLE_PHYSICS = {
+  SPARK: { gravity: 0, drag: 0 },
+  RING: { gravity: 0, drag: 0 },
+  DUST: { gravity: -40, drag: 3.5 },
+  SHARD: { gravity: 900, drag: 0.6 },
+  SPEEDLINE: { gravity: 0, drag: 0 },
+};
+
+/**
+ * Aktualisiert einen Partikel um dt Sekunden (mutiert p).
+ * @returns {boolean} true, solange der Partikel noch lebt.
+ */
+export function stepParticle(p, dt) {
+  if (!p || !(dt > 0)) return !!p && p.life > 0;
+  p.life -= dt;
+  if (p.life <= 0) return false;
+
+  const phys = PARTICLE_PHYSICS[p.type] || PARTICLE_PHYSICS.SPARK;
+  p.vy += phys.gravity * dt;
+  if (phys.drag > 0) {
+    const k = Math.max(0, 1 - phys.drag * dt);
+    p.vx *= k;
+    p.vy *= k;
+  }
+  p.x += p.vx * dt;
+  p.y += p.vy * dt;
+  if (p.type === 'RING') p.size += dt * 70;
+  return true;
+}

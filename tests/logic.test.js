@@ -761,3 +761,42 @@ describe('Logic Module - Metaprogression, Shop & Achievements', () => {
   });
 });
 
+
+import { stepParticle, PARTICLE_PHYSICS } from '../js/logic.js';
+
+describe('Logic Module - Particle Physics', () => {
+  const make = (type, extra = {}) => ({ type, x: 0, y: 0, vx: 100, vy: 0, size: 4, life: 1, maxLife: 1, ...extra });
+
+  it('should move SPARK particles linearly and expire', () => {
+    const p = make('SPARK', { life: 0.2 });
+    assert.equal(stepParticle(p, 0.1), true);
+    assert.equal(p.x, 10);
+    assert.equal(stepParticle(p, 0.2), false);
+  });
+
+  it('should apply gravity to SHARD particles', () => {
+    const p = make('SHARD');
+    stepParticle(p, 0.1);
+    assert.ok(p.vy > 0);
+    assert.ok(PARTICLE_PHYSICS.SHARD.gravity > 0);
+  });
+
+  it('should slow down DUST particles through drag and never reverse direction', () => {
+    const p = make('DUST');
+    stepParticle(p, 0.1);
+    assert.ok(p.vx < 100 && p.vx > 0);
+    stepParticle(p, 5);
+    assert.equal(p.life <= 0, true);
+    const q = make('DUST', { life: 10 });
+    stepParticle(q, 1);
+    assert.ok(q.vx >= 0);
+  });
+
+  it('should grow RING particles and handle invalid input safely', () => {
+    const p = make('RING');
+    stepParticle(p, 0.1);
+    assert.ok(p.size > 4);
+    assert.equal(stepParticle(null, 0.1), false);
+    assert.equal(stepParticle(make('SPARK'), 0), true);
+  });
+});
