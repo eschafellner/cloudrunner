@@ -1178,12 +1178,30 @@ class Game {
   }
 
   updateHUD() {
-    if (this.uiScore) this.uiScore.textContent = this.score;
-    if (this.uiHighscore) this.uiHighscore.textContent = Math.max(this.score, this.getHighestScore());
-    if (this.uiDiscs) this.uiDiscs.textContent = `${this.discs}/20`;
+    // Dirty-Checking: DOM nur anfassen, wenn sich Werte tatsächlich ändern
+    const hc = this._hudCache || (this._hudCache = {});
+    if (this.uiScore && hc.score !== this.score) {
+      hc.score = this.score;
+      this.uiScore.textContent = this.score;
+    }
+    if (this.uiHighscore) {
+      const hs = Math.max(this.score, this.getHighestScore());
+      if (hc.highscore !== hs) {
+        hc.highscore = hs;
+        this.uiHighscore.textContent = hs;
+      }
+    }
+    if (this.uiDiscs) {
+      const discTxt = `${this.discs}/20`;
+      if (hc.discs !== discTxt) {
+        hc.discs = discTxt;
+        this.uiDiscs.textContent = discTxt;
+      }
+    }
 
     // Render up to MAX_LIVES (5) dynamically
-    if (this.uiLivesContainer) {
+    if (this.uiLivesContainer && hc.lives !== this.player.lives) {
+      hc.lives = this.player.lives;
       this.uiLivesContainer.innerHTML = '';
       const totalSlots = Math.max(GAME_CONFIG.INITIAL_LIVES, Math.min(GAME_CONFIG.MAX_LIVES, this.player.lives));
       for (let i = 0; i < totalSlots; i++) {
@@ -1196,6 +1214,10 @@ class Game {
 
     // Render Active Power-Up Badges
     if (this.hudPowerups) {
+      const pus = this.powerUpState;
+      const puKey = `${pus.shield ? 1 : 0}|${pus.magnetTimer > 0 ? pus.magnetTimer.toFixed(1) : 0}|${pus.overdriveTimer > 0 ? pus.overdriveTimer.toFixed(1) : 0}`;
+      if (hc.powerups === puKey) return;
+      hc.powerups = puKey;
       this.hudPowerups.innerHTML = '';
       if (this.powerUpState.shield) {
         const badge = document.createElement('div');
@@ -2235,8 +2257,6 @@ class Game {
       // 1. Outer Neon Cyan/Pink Halo
       this.ctx.strokeStyle = '#00f0ff';
       this.ctx.lineWidth = 2;
-      this.ctx.shadowColor = '#00f0ff';
-      this.ctx.shadowBlur = 8;
       this.ctx.beginPath();
       this.ctx.arc(0, 0, r, 0, Math.PI * 2);
       this.ctx.stroke();
@@ -2279,8 +2299,6 @@ class Game {
       const glintX = Math.cos(angle) * (r * 0.55);
       const glintY = Math.sin(angle) * (r * 0.55);
       this.ctx.fillStyle = '#ffffff';
-      this.ctx.shadowColor = '#ffffff';
-      this.ctx.shadowBlur = 6;
       this.ctx.beginPath();
       this.ctx.arc(glintX, glintY, 2, 0, Math.PI * 2);
       this.ctx.fill();
@@ -2833,16 +2851,12 @@ class Game {
 
       if (p.type === 'SPARK') {
         this.ctx.fillStyle = p.color;
-        this.ctx.shadowColor = p.color;
-        this.ctx.shadowBlur = 6;
         this.ctx.globalAlpha = alpha;
         this.ctx.beginPath();
         this.ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
         this.ctx.fill();
       } else if (p.type === 'RING') {
         this.ctx.strokeStyle = p.color;
-        this.ctx.shadowColor = p.color;
-        this.ctx.shadowBlur = 10;
         this.ctx.lineWidth = 2;
         this.ctx.globalAlpha = alpha;
         this.ctx.beginPath();
@@ -2858,8 +2872,6 @@ class Game {
         this.ctx.translate(p.x, p.y);
         this.ctx.rotate(p.rot || 0);
         this.ctx.fillStyle = p.color;
-        this.ctx.shadowColor = p.color;
-        this.ctx.shadowBlur = 8;
         this.ctx.globalAlpha = alpha;
         this.ctx.fillRect(-p.size / 2, -p.size / 4, p.size, p.size / 2);
       } else if (p.type === 'SPEEDLINE') {
@@ -2882,8 +2894,6 @@ class Game {
       const alpha = ft.life / ft.maxLife;
       this.ctx.globalAlpha = alpha;
       this.ctx.fillStyle = ft.color;
-      this.ctx.shadowColor = ft.color;
-      this.ctx.shadowBlur = 8;
       this.ctx.font = 'bold 15px monospace';
       this.ctx.textAlign = 'center';
       this.ctx.fillText(ft.text, ft.x, ft.y);

@@ -32,6 +32,21 @@ class SoundEngine {
       73.42, 65.41, 58.27, 87.31,   // Bars 5-8: D2, C2, Bb1, F2
     ];
 
+    // Pad-Akkorde (Dreiklänge) passend zu bassNotes: Dm, C, Bb, C, Dm, C, Bb, F
+    this.chords = [
+      [146.83, 174.61, 220.00],
+      [130.81, 164.81, 196.00],
+      [116.54, 146.83, 174.61],
+      [130.81, 164.81, 196.00],
+      [146.83, 174.61, 220.00],
+      [130.81, 164.81, 196.00],
+      [116.54, 146.83, 174.61],
+      [174.61, 220.00, 261.63],
+    ];
+    this.padBus = null;
+    this.echoSend = null;
+    this.noiseBuffer = null;
+
     // 128-step Synthwave Lead Melody
     // Bars 1-4: Iconic, driving, syncopated theme from original
     // Bars 5-8: High-octave energetic response with identical driving syncopation
@@ -111,6 +126,33 @@ class SoundEngine {
       this.musicGain = this.ctx.createGain();
       this.musicGain.gain.setValueAtTime(0.38, this.ctx.currentTime);
       this.musicGain.connect(this.musicFilter);
+
+      // Pad-Bus (Ziel für Sidechain-Ducking)
+      this.padBus = this.ctx.createGain();
+      this.padBus.gain.setValueAtTime(1, this.ctx.currentTime);
+      this.padBus.connect(this.musicGain);
+
+      // Echo-Bus: punktierte Achtel, Feedback tiefpassgefiltert
+      this.echoSend = this.ctx.createGain();
+      this.echoSend.gain.setValueAtTime(0.3, this.ctx.currentTime);
+      const delay = this.ctx.createDelay(1.0);
+      delay.delayTime.setValueAtTime(this.stepDuration * 3, this.ctx.currentTime);
+      const feedback = this.ctx.createGain();
+      feedback.gain.setValueAtTime(0.32, this.ctx.currentTime);
+      const echoFilter = this.ctx.createBiquadFilter();
+      echoFilter.type = 'lowpass';
+      echoFilter.frequency.setValueAtTime(2800, this.ctx.currentTime);
+      this.echoSend.connect(delay);
+      delay.connect(echoFilter);
+      echoFilter.connect(feedback);
+      feedback.connect(delay);
+      echoFilter.connect(this.musicGain);
+
+      // Rauschbuffer einmalig erzeugen (statt pro Snare/Hi-Hat)
+      const noiseLen = Math.floor(this.ctx.sampleRate * 0.25);
+      this.noiseBuffer = this.ctx.createBuffer(1, noiseLen, this.ctx.sampleRate);
+      const noiseData = this.noiseBuffer.getChannelData(0);
+      for (let i = 0; i < noiseLen; i++) noiseData[i] = Math.random() * 2 - 1;
 
       this.isInitialized = true;
     } catch (e) {
@@ -435,6 +477,60 @@ class SoundEngine {
     } catch {}
   }
 
+  /** Alias: von game.js beim Einsammeln einer Disc verwendet. */
+  playDiscPickup() {
+    this.playDisc();
+  }
+
+  /** Alias: von game.js bei Extra-Leben verwendet. */
+  playExtraLife() {
+    this.playLifeUp();
+  }
+
+  /**
+   * Plays streak milestone sound (short rising double blip)
+   */
+  playMilestone() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      [880, 1174.66].forEach((freq, i) => {
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        const t = now + i * 0.07;
+        osc.type = 'square';
+        osc.frequency.setValueAtTime(freq, t);
+        gain.gain.setValueAtTime(0.12, t);
+        gain.gain.exponentialRampToValueAtTime(0.001, t + 0.12);
+        osc.connect(gain);
+        gain.connect(this.sfxGain);
+        osc.start(t);
+        osc.stop(t + 0.12);
+      });
+    } catch {}
+  }
+
+  /**
+   * Plays game over sound (descending sawtooth sweep)
+   */
+  playGameOver() {
+    if (!this.ctx || this.isMuted) return;
+    try {
+      const now = this.ctx.currentTime;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(440, now);
+      osc.frequency.exponentialRampToValueAtTime(55, now + 0.9);
+      gain.gain.setValueAtTime(0.3, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.9);
+      osc.connect(gain);
+      gain.connect(this.sfxGain);
+      osc.start(now);
+      osc.stop(now + 0.9);
+    } catch {}
+  }
+
   /* ------------------- SYNTHWAVE MUSIC ENGINE ------------------- */
 
   /**
@@ -521,9 +617,16 @@ class SoundEngine {
     const stepInBar = step % 16;
     const bar = Math.floor(step / 16);
 
+    // 0. Pad-Akkord zu Beginn jedes Takts
+    if (stepInBar === 0) {
+      const chord = this.chords[bar % this.chords.length];
+      if (chord) this.playPad(time, chord, this.stepDuration * 16);
+    }
+
     // 1. Synthwave Kick Drum (Driving four-on-the-floor: beats 0, 4, 8, 12 of EVERY bar)
     if (stepInBar % 4 === 0) {
       this.playKick(time);
+      this.duckPad(time);
     }
 
     // 2. Cyberpunk Snare / Clap (Beats 4 & 12 of EVERY bar)
@@ -531,16 +634,21 @@ class SoundEngine {
       this.playSnare(time);
     }
 
-    // 3. Hi-Hat groove (every 8th note / 2 steps, with offbeat accents)
-    if (step % 2 === 0) {
+    // 3. Hi-Hat groove: geschlossene 8tel, offene Hat auf dem "und" von Beat 4
+    if (stepInBar === 14) {
+      this.playOpenHat(time, 0.07);
+    } else if (step % 2 === 0) {
       const isOffbeat = (stepInBar % 4 === 2);
       this.playHiHat(time, isOffbeat ? 0.08 : 0.035);
+    } else if (this.isOverdrive) {
+      this.playHiHat(time, 0.02);
     }
 
-    // 4. Rolling Synthwave Bassline (8th notes normally, 16th notes during Overdrive)
+    // 4. Rolling Bassline (8tel, im Overdrive 16tel) mit Oktav-Sprung auf Offbeats
     const playBass = this.isOverdrive || (step % 2 === 0);
     if (playBass) {
-      const root = this.bassNotes[bar % this.bassNotes.length] || 73.42;
+      let root = this.bassNotes[bar % this.bassNotes.length] || 73.42;
+      if (stepInBar % 4 === 2) root *= 2; // Oktav-Groove
       const dur = this.stepDuration * (this.isOverdrive ? 1.0 : 1.6);
       this.playBassNote(time, root, dur);
     }
@@ -551,10 +659,43 @@ class SoundEngine {
       this.playLeadNote(time, leadFreq, this.stepDuration * 1.8);
     }
 
-    // 6. Low-Health Adrenaline Heartbeat Pulse
+    // 6. Overdrive-Arpeggio: Akkordtöne eine Oktave höher in 16teln
+    if (this.isOverdrive) {
+      const chord = this.chords[bar % this.chords.length];
+      if (chord) {
+        const arpFreq = chord[stepInBar % chord.length] * 4;
+        this.playArpNote(time, arpFreq, this.stepDuration * 0.9);
+      }
+    }
+
+    // 7. Low-Health Adrenaline Heartbeat Pulse
     if (this.isLowHealth && stepInBar % 8 === 0) {
       this.playHeartbeat(time);
     }
+  }
+
+  /**
+   * Sidechain-Ducking: Pad kurz absenken, wenn der Kick einsetzt.
+   */
+  duckPad(time) {
+    if (!this.padBus) return;
+    const g = this.padBus.gain;
+    g.setValueAtTime(0.35, time);
+    g.linearRampToValueAtTime(1, time + this.stepDuration * 3.5);
+  }
+
+  playArpNote(time, freq, duration) {
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, time);
+    gain.gain.setValueAtTime(0.05, time);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
+    osc.connect(gain);
+    gain.connect(this.musicGain);
+    if (this.echoSend) gain.connect(this.echoSend);
+    osc.start(time);
+    osc.stop(time + duration);
   }
 
   playKick(time) {
@@ -590,16 +731,9 @@ class SoundEngine {
   }
 
   playSnare(time, vol = 0.35) {
-    // Crisp noise snap
-    const bufferSize = Math.floor(this.ctx.sampleRate * 0.1);
-    const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      data[i] = (Math.random() * 2 - 1) * Math.exp(-i / (bufferSize * 0.25));
-    }
-
+    // Crisp noise snap (gecachter Buffer, Decay über Gain-Hüllkurve)
     const noise = this.ctx.createBufferSource();
-    noise.buffer = buffer;
+    noise.buffer = this.noiseBuffer;
 
     const filter = this.ctx.createBiquadFilter();
     filter.type = 'highpass';
@@ -607,13 +741,15 @@ class SoundEngine {
 
     const gain = this.ctx.createGain();
     gain.gain.setValueAtTime(vol, time);
-    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
 
     noise.connect(filter);
     filter.connect(gain);
     gain.connect(this.musicGain);
+    if (this.echoSend) gain.connect(this.echoSend);
 
     noise.start(time);
+    noise.stop(time + 0.13);
 
     // Tonal body pop
     const bodyOsc = this.ctx.createOscillator();
@@ -632,25 +768,7 @@ class SoundEngine {
   }
 
   playHiHat(time, vol = 0.05) {
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    const filter = this.ctx.createBiquadFilter();
-
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(8000, time);
-
-    filter.type = 'highpass';
-    filter.frequency.setValueAtTime(7000, time);
-
-    gain.gain.setValueAtTime(vol, time);
-    gain.gain.exponentialRampToValueAtTime(0.0001, time + 0.04);
-
-    osc.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.musicGain);
-
-    osc.start(time);
-    osc.stop(time + 0.04);
+    this.playNoiseHat(time, vol, 0.04);
   }
 
   playBassNote(time, freq, duration) {
@@ -679,26 +797,95 @@ class SoundEngine {
   }
 
   playLeadNote(time, freq, duration) {
-    const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     const filter = this.ctx.createBiquadFilter();
 
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(freq, time);
-
     filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(2600, time);
+    filter.frequency.setValueAtTime(3200, time);
     filter.frequency.exponentialRampToValueAtTime(1100, time + duration);
 
-    gain.gain.setValueAtTime(0.20, time);
+    // Kurzes Attack gegen Klicks, dann Decay
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(0.16, time + 0.006);
     gain.gain.exponentialRampToValueAtTime(0.001, time + duration);
 
-    osc.connect(filter);
+    // Zwei leicht verstimmte Sägezähne (Supersaw-Light) für breiteren Klang
+    [-7, 7].forEach(detune => {
+      const osc = this.ctx.createOscillator();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, time);
+      osc.detune.setValueAtTime(detune, time);
+      osc.connect(filter);
+      osc.start(time);
+      osc.stop(time + duration);
+    });
+
     filter.connect(gain);
     gain.connect(this.musicGain);
+    if (this.echoSend) gain.connect(this.echoSend);
+  }
 
-    osc.start(time);
-    osc.stop(time + duration);
+  /**
+   * Weicher Akkord-Pad (Dreiklang pro Takt) mit langsamem Attack/Release.
+   */
+  playPad(time, chord, duration) {
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(700, time);
+    filter.frequency.linearRampToValueAtTime(1400, time + duration * 0.5);
+    filter.frequency.linearRampToValueAtTime(700, time + duration);
+
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.linearRampToValueAtTime(0.07, time + 0.35);
+    gain.gain.setValueAtTime(0.07, time + duration - 0.4);
+    gain.gain.linearRampToValueAtTime(0.0001, time + duration);
+
+    chord.forEach(freq => {
+      [-9, 9].forEach(detune => {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, time);
+        osc.detune.setValueAtTime(detune, time);
+        osc.connect(filter);
+        osc.start(time);
+        osc.stop(time + duration + 0.05);
+      });
+    });
+
+    filter.connect(gain);
+    gain.connect(this.padBus || this.musicGain);
+  }
+
+  /**
+   * Offene Hi-Hat (längerer Noise-Decay).
+   */
+  playOpenHat(time, vol = 0.06) {
+    this.playNoiseHat(time, vol, 0.16);
+  }
+
+  /**
+   * Hi-Hat aus gecachtem Rauschbuffer (kein Buffer-Alloc pro Note).
+   */
+  playNoiseHat(time, vol, decay) {
+    if (!this.noiseBuffer) return;
+    const src = this.ctx.createBufferSource();
+    src.buffer = this.noiseBuffer;
+    const filter = this.ctx.createBiquadFilter();
+    const gain = this.ctx.createGain();
+
+    filter.type = 'highpass';
+    filter.frequency.setValueAtTime(7500, time);
+
+    gain.gain.setValueAtTime(vol, time);
+    gain.gain.exponentialRampToValueAtTime(0.0001, time + decay);
+
+    src.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.musicGain);
+    src.start(time);
+    src.stop(time + decay + 0.01);
   }
 
   playHeartbeat(time) {
